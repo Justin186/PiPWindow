@@ -7,6 +7,7 @@
 ![preview.png](https://github.com/Lukoning/PiPWindow/blob/dist/preview.png)
 
 ### <a href="https://github.com/Lukoning/PiPWindow/releases">更新日志在RELEASES, HERE PLEASE -></a>
+# 欢迎积极的Issue和Pull Request
 # 说明
 <p>点击歌曲红心❤️旁按钮或⚙️设置页链接打开/关闭◲小窗</p>
 <p>可拖动↔↕可调整大小</p>
