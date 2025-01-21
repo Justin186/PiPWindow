@@ -4,7 +4,7 @@
 
 灵感来源：网易云Web端的歌词小窗。使用了与其相似的方法实现
 
-![preview.png](https://github.com/Lukoning/PiPWindow/blob/dist/preview.png)
+![preview.webp](https://github.com/Lukoning/PiPWindow/raw/refs/heads/dist/preview.webp)
 
 ### <a href="https://github.com/Lukoning/PiPWindow/releases">更新日志在RELEASES, HERE PLEASE -></a>
 # 欢迎积极的Issue和Pull Request
