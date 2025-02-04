@@ -1,6 +1,6 @@
 # PiPWindow
 
-一个纯JavaScript实现的歌曲信息小窗
+一个通过JavaScript实现的歌曲信息小窗
 
 灵感来源：网易云Web端的歌词小窗。使用了与其相似的方法实现
 
