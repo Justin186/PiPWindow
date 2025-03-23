@@ -6,6 +6,8 @@
 
 ![preview.webp](https://github.com/Lukoning/PiPWindow/raw/refs/heads/dist/preview.webp)
 
+![image](https://github.com/user-attachments/assets/3e24fe01-1e79-4f84-8de3-19adc115e533)
+
 ### <a href="https://github.com/Lukoning/PiPWindow/releases">更新日志在RELEASES, HERE PLEASE -></a>
 # 欢迎积极的Issue和Pull Request
 # 说明
