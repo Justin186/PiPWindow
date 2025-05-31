@@ -2,7 +2,7 @@
 **Copyright (C) 2024-2025 Lukoning
 */
 let rvN, v, amllbgv/*Apple Music-like Lyrics Background Video*/, b/*(toggle)button*/, cP/*configPage*/, c/*canvas*/, bgc/*Background Canvas*/, cpc/*ColorPick() Canvas*/, cC/*...Context*/, bgcC, cpcC
-, cover, OcvUrl, cvUrl, cvUrlCache, songDataCache, tMsT, lrcCache, pLrc, pLrcKeys, showRefreshing, thePiPWindow
+, cover, OcvUrl, cvUrl, cvUrlCache, OcvUrlCache, songDataCache, tMsT, lrcCache, pLrc, pLrcKeys, showRefreshing, thePiPWindow
 , DontPlay=false, DontPause=false, autoRatio, autoRatioValue=480, lastReRatio=0, songIdCache=0, playProgress=0, nrLrc=false, lrcNowLoading=false, reRatioPending=false, isDynamicLyrics=false, isJp=false,debugMode=false
 , isVLsnAdded=false, isLrcRnpLsnAdded=false
 , t = "0:00 / 0:00", tC = 0, tT = 0, tP = 0, tR = 0 //显示用，Current，Total，PassedRate，Remaining
@@ -16,7 +16,7 @@ const pdd = "M21 3C21.5523 3 22 3.44772 22 4V11H20V5H4V19H10V21H3C2.44772 21 2 2
     whenClose: "none", whenBack: "back", whenCloseOrBack_paused: "close", autoHideMainWindow: false, showTaskbarButton: false
     , useCloudDataForLocalFile: false, showDiscWhenNoCover: false, allowNonsquareCover: false, /*showIconBarBeforeInfo: true,*/ trackInfoShow: "album", timeInfo: "CurrentTotal"
     , lyricLine2Show: "auto", dynamicLyrics: true, autoScroll: true, lyricsTaperOff: true, lyricsMask: false, lyricsHanzi2Kanji: true, lyricsOffset: 0, lyricsFrom: "LibLyric", lyricsCustomSources: "https://example.com/lyric?track=${track}&id=${trackId}&art=${artist}&arts=${artists}&album=${album}&albumId=${albumId}", showLyricsErrorTip: true
-    , colorFrom: "albumCover", /*colorCustom: ({accent: "#F00", text: "#F00", bg: "#000"}),*/ backgroundFrom: "albumCoverBlur", generalFontWeight: 400, originalLyricsFontWeight: 700, translatedLyricsFontWeight: 400, customFonts: "\"Segoe UI\", \"Microsoft Yahei UI\", system-ui", useJapaneseFonts: true, customJapaneseFonts: "\"Yu Gothic UI\", \"Meiryo UI\", \"Microsoft Yahei UI\", system-ui"
+    , colorFrom: "albumCover", colorCustom_accent: "#FFFFFF", colorCustom_text: "#FFFFFF", colorCustom_bg: "#424242", backgroundFrom: "albumCoverBlur", generalFontWeight: 400, originalLyricsFontWeight: 700, translatedLyricsFontWeight: 400, customFonts: "\"Segoe UI\", \"Microsoft Yahei UI\", system-ui", useJapaneseFonts: true, customJapaneseFonts: "\"Yu Gothic UI\", \"Meiryo UI\", \"Microsoft Yahei UI\", system-ui"
     , smoothProgessBar: true, resolutionRatio: "auto", aspectRatio: "2:1", albumCoverSize: 160, useFullCover: false
     , customLoadingTxt: "正在载入猫猫…"})
 , DcvUrl/*Default*/ = "orpheus://orpheus/style/res/common/discovery/calendar_bg.png"
@@ -160,49 +160,53 @@ function colorPick(from=null) { //取色
     else {bgTO = colorS.bg.replace(/rgb\(/, "rgba(").replace(/\)/, "")}
     colorS.bg = `${bgTO})`, colorS.bgT = `${bgTO}, .3)`;
     if (q("body.material-you-theme:not(.ncm-light-theme)")) {colorS.bgT = `${colorS.accent.replace(/\)/, "")}, .1)`;}
-    /*if (readCfg.colorFrom=="custom") {
-        color = readCfg.colorCustom
-    } else */if (from==null) {
-        color.accent = colorS.accent;
+    if (readCfg.colorFrom=="custom") { //这里的数据是HEX格式
+        color.accent = readCfg.colorCustom_accent;
+        textTO = readCfg.colorCustom_text;
+        color.text = textTO, color.textT56 = `${textTO}8F`, color.textT42 = `${textTO}6B`, color.textT31 = `${textTO}4F`, color.textT13 = `${textTO}21`;
+        bgTO = readCfg.colorCustom_bg;
+        color.bg = bgTO, color.bgT00 = `${bgTO}00`, color.bgT50 = `${bgTO}7F`;
+    } else {
+        if (from==null) {
+            color.accent = colorS.accent;
+        } else if (from instanceof HTMLElement) {
+            function brightness(rgb, factor) {
+                let rN = Math.min(255, Math.max(0, rgb[0] * factor))
+                , gN = Math.min(255, Math.max(0, rgb[1] * factor))
+                , bN = Math.min(255, Math.max(0, rgb[2] * factor));
+                return [Math.round(rN), Math.round(gN), Math.round(bN), 255];
+            }
+            function saturation(rgb, factor) {
+                let l = (.299*rgb[0]+.587*rgb[1]+.114*rgb[2])
+                , rN = Math.min(255, Math.max(0, l + (rgb[0] - l) * factor))
+                , gN = Math.min(255, Math.max(0, l + (rgb[1] - l) * factor))
+                , bN = Math.min(255, Math.max(0, l + (rgb[2] - l) * factor));
+                return [Math.round(rN), Math.round(gN), Math.round(bN), 255];
+            }
+            if (!cpc||!cpcC) {cpc = cE("canvas"); cpc.width = 3; cpc.height = 3; cpcC = cpc.getContext("2d",{alpha:false})}
+            from.height?cpcC.drawImage(from, 0, 0, cpc.width, cpc.height):""
+            let rgb = cpcC.getImageData(1, 1, 2, 2).data
+            , l = (.299*rgb[0]+.587*rgb[1]+.114*rgb[2])
+            , bf = 1, sf = 1.2
+            l<8?bf=50 : l<16?bf=16 : l<32?bf=12 : l<64?bf=8 : l<128?bf=2 : l>144?bf=(-.4) : ""
+            l>144?sf=6 : ""
+            let rgbN = brightness(rgb, l>160?1.1:l>144?1.4:.5)
+            bgTO = `rgba(${rgbN[0]}, ${rgbN[1]}, ${rgbN[2]}`
+            if (readCfg.backgroundFrom == "AMLL"&&loadedPlugins["Apple-Musiclike-lyrics"]) { //AMLL背景下的颜色...优化?
+                rgbN = brightness(saturation(rgb, sf+.3), 4+bf)
+                if ((.299*rgbN[0]+.587*rgbN[1]+.114*rgbN[2])>245) {rgbN = brightness(saturation(rgb, 4), 2+bf)}
+            } else {
+                rgbN = brightness(saturation(rgb, sf), .7+bf)
+                if ((.299*rgbN[0]+.587*rgbN[1]+.114*rgbN[2])>245) {rgbN = brightness(saturation(rgb, 4), .7+bf)}
+            }
+            if (rgbN[0]>235&&rgbN[1]<235&&rgbN[2]<235) {rgbN = [235, rgbN[1]<50?50:rgbN[1], rgbN[2]<30?30:rgbN[2]]} //太红看不清
+            color.accent = `rgb(${rgbN[0]}, ${rgbN[1]}, ${rgbN[2]})`
+            textTO = `rgba(${rgbN[0]}, ${rgbN[1]}, ${rgbN[2]}`
+        }
         color.text = `${textTO})`, color.textT56 = `${textTO}, .56)`, color.textT42 = `${textTO}, .42)`, color.textT31 = `${textTO}, .31)`, color.textT13 = `${textTO}, .13)`;
         color.bg = `${bgTO})`, color.bgT00 = `${bgTO}, 0)`, color.bgT50 = `${bgTO}, .5)`;
-    } else if (from instanceof HTMLElement) {
-        function brightness(rgb, factor) {
-            let rN = Math.min(255, Math.max(0, rgb[0] * factor))
-            , gN = Math.min(255, Math.max(0, rgb[1] * factor))
-            , bN = Math.min(255, Math.max(0, rgb[2] * factor));
-            return [Math.round(rN), Math.round(gN), Math.round(bN), 255];
-        }
-        function saturation(rgb, factor) {
-            let l = (.299*rgb[0]+.587*rgb[1]+.114*rgb[2])
-            , rN = Math.min(255, Math.max(0, l + (rgb[0] - l) * factor))
-            , gN = Math.min(255, Math.max(0, l + (rgb[1] - l) * factor))
-            , bN = Math.min(255, Math.max(0, l + (rgb[2] - l) * factor));
-            return [Math.round(rN), Math.round(gN), Math.round(bN), 255];
-        }
-        if (!cpc||!cpcC) {cpc = cE("canvas"); cpc.width = 3; cpc.height = 3; cpcC = cpc.getContext("2d",{alpha:false})}
-        from.height?cpcC.drawImage(from, 0, 0, cpc.width, cpc.height):""
-        let rgb = cpcC.getImageData(1, 1, 2, 2).data
-        , l = (.299*rgb[0]+.587*rgb[1]+.114*rgb[2])
-        , bf = 1, sf = 1.2
-        l<8?bf=50 : l<16?bf=16 : l<32?bf=12 : l<64?bf=8 : l<128?bf=2 : l>144?bf=(-.4) : ""
-        l>144?sf=6 : ""
-        let rgbN = brightness(rgb, l>160?1.1:l>144?1.4:.5)
-        bgTO = `rgba(${rgbN[0]}, ${rgbN[1]}, ${rgbN[2]}`
-        color.bg = `${bgTO})`, color.bgT00 = `${bgTO}, 0)`, color.bgT50 = `${bgTO}, .5)`;
-        if (readCfg.backgroundFrom == "AMLL"&&loadedPlugins["Apple-Musiclike-lyrics"]) { //AMLL背景下的颜色...优化?
-            rgbN = brightness(saturation(rgb, sf+.3), 4+bf)
-            if ((.299*rgbN[0]+.587*rgbN[1]+.114*rgbN[2])>245) {rgbN = brightness(saturation(rgb, 4), 2+bf)}
-        } else {
-            rgbN = brightness(saturation(rgb, sf), .7+bf)
-            if ((.299*rgbN[0]+.587*rgbN[1]+.114*rgbN[2])>245) {rgbN = brightness(saturation(rgb, 4), .7+bf)}
-        }
-        if (rgbN[0]>235&&rgbN[1]<235&&rgbN[2]<235) {rgbN = [235, rgbN[1]<50?50:rgbN[1], rgbN[2]<30?30:rgbN[2]]} //太红看不清
-        color.accent = `rgb(${rgbN[0]}, ${rgbN[1]}, ${rgbN[2]})`
-        textTO = `rgba(${rgbN[0]}, ${rgbN[1]}, ${rgbN[2]}`
-        color.text = `${textTO})`, color.textT56 = `${textTO}, .56)`, color.textT42 = `${textTO}, .42)`, color.textT31 = `${textTO}, .31)`, color.textT13 = `${textTO}, .13)`;
-        //console.log(color, colorS)
     }
+    
     try {let s0 = q("#PiPWSettingsStyle0", cP), s = `
 #PiPWSettings {
     --pipws-fg: ${colorS.accent};
@@ -234,7 +238,6 @@ async function loadPiP(isToPiP=true, from="unknow") {
             }
         }
     
-        if (cvUrl != cvUrlCache) {nrHead=true}
         if (data.id != songIdCache) {getInfo(); chigai=true; songIdCache = data.id; nrLrc=true; nrHead=true}
         if (from=="Settings" && (oldCfg.lyricsFrom!=readCfg.lyricsFrom||oldCfg.lyricsCustomSources!=readCfg.lyricsCustomSources)) {nrLrc=true}
     
@@ -248,16 +251,18 @@ async function loadPiP(isToPiP=true, from="unknow") {
         readCfg.useFullCover?thbn="":""
         if (readCfg.allowNonsquareCover) {cvSizeX = cover.width*(cvSizeY/cover.height);thbn=""}
         try {
+            OcvUrl = q("img.j-cover").src;
+            if (OcvUrl != OcvUrlCache) {nrHead=true; OcvUrlCache=OcvUrl} //不对头…刷新！(解决断网有时获取封面为空问题)
+        }catch{}
+        try {
             let u = data.album.picUrl
             if (!u) {ya.ma.no.su.su.me;throw new Error()}
             else {cvUrl = `orpheus://cache/?${u}?imageView&enlarge=1&type=webp${thbn==""?"":`&${thbn}`}`}
-        } catch {
-            try {
-                let c = q("img.j-cover")
-                OcvUrl = c.src; cvUrl = OcvUrl.replace(/thumbnail=([^&]+)/, `type=webp${thbn==""?"":`&${thbn}`}`)
-                if (!cvUrl) {cvUrl = null}
-            } catch {cvUrl = null}
-        }
+        } catch {try {
+            cvUrl = OcvUrl.replace(/thumbnail=([^&]+)/, `type=webp${thbn==""?"":`&${thbn}`}`)
+            if (!cvUrl) {cvUrl = null}
+        } catch {cvUrl = null}}
+        if (cvUrl != cvUrlCache) {nrHead=true}
         function getInfo() {
             /*歌名*/
             try {
@@ -454,27 +459,30 @@ async function loadPiP(isToPiP=true, from="unknow") {
             } catch(e) {getLrcErr(e)}
         }
         function handleLyrics() {
-            pLrcKeys = Object.keys(pLrc)
-            for (let i = 0; i < pLrcKeys.length; i++) {
-                isJp = /[ぁ-ヿ]/g.test(pLrc[i].originalLyric)
-                if (isJp==true) {break}
-            }
-            for (let i = 0; i < pLrcKeys.length; i++) {
-                let o = pLrc[i].originalLyric, t = pLrc[i].translatedLyric, d = JSON.stringify(pLrc[i].dynamicLyric)
-                if (o==t) {pLrc[i].translatedLyric = ""} //优化歌词展示体验
-                o = pLrc[i].originalLyric.replace(/\s+/g, " ").trim()
-                if (o=="") {if (i+1==pLrcKeys.length) {delete pLrc[i];pLrcKeys = Object.keys(pLrc);continue} else {pLrc[i].originalLyric = "· · ·", pLrc[i].translatedLyric = ""}}
-                else if (isJp && readCfg.lyricsHanzi2Kanji) {
-                    pLrc[i].originalLyric = cn2jp(o)
-                    try{d = cn2jp(d)}catch{}
-                } else {pLrc[i].originalLyric = o}
-                try{
-                    d = d.replace(/\s+/g, " ").trim()
-                    pLrc[i].dynamicLyric = JSON.parse(d)
-                }catch{}
+            if (pLrc.length==0) {isJp=false} else {
+                pLrcKeys = Object.keys(pLrc)
+                for (let i = 0; i < pLrcKeys.length; i++) {
+                    isJp = /[ぁ-ヿ]/g.test(pLrc[i].originalLyric)
+                    if (isJp==true) {break}
+                }
+                for (let i = 0; i < pLrcKeys.length; i++) {
+                    let o = pLrc[i].originalLyric, t = pLrc[i].translatedLyric, d = JSON.stringify(pLrc[i].dynamicLyric)
+                    if (o==t) {pLrc[i].translatedLyric = ""} //优化歌词展示体验
+                    o = pLrc[i].originalLyric.replace(/\s+/g, " ").trim()
+                    if (o=="") {if (i+1==pLrcKeys.length) {delete pLrc[i];pLrcKeys = Object.keys(pLrc);continue} else {pLrc[i].originalLyric = "· · ·", pLrc[i].translatedLyric = ""}}
+                    else if (isJp && readCfg.lyricsHanzi2Kanji) {
+                        pLrc[i].originalLyric = cn2jp(o)
+                        try{d = cn2jp(d)}catch{}
+                    } else {pLrc[i].originalLyric = o}
+                    try{
+                        d = d.replace(/\s+/g, " ").trim()
+                        pLrc[i].dynamicLyric = JSON.parse(d)
+                    }catch{}
+                }
             }
         }
         function lrcUpdate() { //更新歌词数据
+            if (pLrc.length==0) {return}
             let l = pLrcKeys.length, p = playProgress+offset
             for (let i = 0; i < l; i++) {
                 let d = pLrc[i].duration
@@ -745,7 +753,10 @@ async function loadPiP(isToPiP=true, from="unknow") {
         if (nrInfo) {
             cC.fillStyle = color.text; cC.font = `${gFW} ${o25}px ${f}`; cC.fillText(ldTxt, o5, o30); /*封面(加载)*/
             cover.onload = ()=>{/*封面(完毕)*/
-                if (readCfg.allowNonsquareCover) {cvSizeX = cover.width*(cvSizeY/cover.height); txtMgL=cvSizeX+o10}
+                let isCoverEmpty = (!cvUrl||cover.src==DcvUrl)
+                isCoverEmpty?cvSizeX=o5:void(0)
+                if (!isCoverEmpty&&readCfg.allowNonsquareCover) {cvSizeX = cover.width*(cvSizeY/cover.height)}
+                txtMgL=cvSizeX+o10
                 readCfg.colorFrom=="albumCover"? colorPick(cover?cover:null) : colorPick()
                 /*背景图*/
                 if (readCfg.backgroundFrom == "albumCoverBlur") {
@@ -760,7 +771,10 @@ async function loadPiP(isToPiP=true, from="unknow") {
                 cC.fillStyle = color.bg;
                 cC.drawImage(bgc, 0, 0, cvSizeX, cvSizeY+o5, 0, 0, cvSizeX, cvSizeY+o5);
                 drawInfo();
-                if (!cvUrl&&readCfg.showDiscWhenNoCover) {
+                if (!isCoverEmpty) {
+                    cC.drawImage(cover, 0, 0, cvSizeX, cvSizeY);drawRC();
+                    if(showRefreshing){console.log(`PiPW Log: 歌曲封面绘制完成`)}
+                } else if (readCfg.showDiscWhenNoCover) {
                     let disc = new Image();
                     disc.src = discUrl;
                     disc.onload = () => {
@@ -768,14 +782,11 @@ async function loadPiP(isToPiP=true, from="unknow") {
                         if(showRefreshing){console.log(`PiPW Log: 唱片绘制完成`)}
                         disc = null //处理
                     };
-                } else if (cvUrl) {
-                    cC.drawImage(cover, 0, 0, cvSizeX, cvSizeY);drawRC();
-                    if(showRefreshing){console.log(`PiPW Log: 歌曲封面绘制完成`)}
                 }
                 loadPiP() //解决首次打开黑窗问题(及其他小问题)的关键
             }
             cover.onerror = ()=>{/*封面(失败)*/
-                cover.src = OcvUrl
+                cover.src = OcvUrl?OcvUrl:DcvUrl
                 loadPiP()
             }
         }
@@ -867,56 +878,49 @@ async function saveCfg(all="all") { //保存设置
     oldCfg = {...readCfg}
     let a = Array.from(arguments);
     if (a[0] == "all") {a = Object.keys(cfgDefault)}
-    processKey(a, cfgDefault);
-    function processKey(a, o, p="") { /*allKeys, object, prefix*/
-        p==""?"":p=`${p}.`
-        for (let i = 0; i < a.length; i++) {
-            if (a[i] in o) {
-                let kv, kn=`${a[i]}`, sid=`${p}${kn}`, ov=o[`${kn}`] /*keyValue, keyName, setID, originalValue*/
-                switch (typeof ov) {
-                    case "number":
-                        let n = q(`#${sid}SetBox`, cP)
-                        if (n) {
-                            let set = n.value*1;
-                            if (typeof set != "number" || set == "") {set = ov; n.value = set}
-                            else {
-                                if (n.validity.rangeOverflow) {
-                                    set = n.max; n.value = n.max
-                                } else if (n.validity.rangeUnderflow) {
-                                    set = n.min; n.value = n.min
-                                }
-                            }
-                            kv = set;
-                        }
-                        break;
-                    case "string":
-                        let str = q(`#${sid}SetBox`, cP), radios = qAll(`[name=${sid}]`, cP)
-                        if (str) { //这里if...else if...两边不!能!调换位置，下同
-                            let set = str.value;
-                            if (set == "undefined" || set == "null" || set == "") {set = ov; str.value = set}
-                            kv = set;
-                        } else if (radios) {
-                            for (let i = 0; i < radios.length; i++) {
-                                if (radios[i].checked) {
-                                    kv = radios[i].value;
-                                }
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] in cfgDefault) {
+            let key, dfSet = cfgDefault[`${a[i]}`]
+            switch (typeof dfSet) {
+                case "number":
+                    let n = q(`#${a[i]}SetBox`, cP)
+                    if (n) {
+                        let set = n.value*1;
+                        if (typeof set != "number" || set == "") {set = dfSet; n.value = set}
+                        else {
+                            if (n.validity.rangeOverflow) {
+                                set = n.max; n.value = n.max
+                            } else if (n.validity.rangeUnderflow) {
+                                set = n.min; n.value = n.min
                             }
                         }
-                        break;
-                    case "boolean":
-                        let swc = q(`#${sid}Switch`, cP), ckBox = q(`#${sid}CheckBox`, cP)
-                        if (swc) {kv = swc.checked} else if (ckBox) {kv = ckBox.checked}
-                        break;
-                    case "object":
-                        processKey(Object.keys(ov), ov, sid);
-                        break;
-                    default:
-                        console.error(`PiPW Error: !! 不支持此设置项的类型: ${sid}`)
-                }
-                readCfg[`${kn}`] = kv
-            } else {
-                console.error(`PiPW Error: 无效的设置项: ${sid}`)
+                        key = set;
+                    }
+                    break;
+                case "string":
+                    let str = q(`#${a[i]}SetBox`, cP), radios = qAll(`[name=${a[i]}]`, cP)
+                    if (radios.length!=0) {
+                        for (let i = 0; i < radios.length; i++) {
+                            if (radios[i].checked) {
+                                key = radios[i].value;
+                            }
+                        }
+                    } else if (str) {
+                        let set = str.value;
+                        if (set == "undefined" || set == "null" || set == "") {set = dfSet; str.value = set}
+                        key = set;
+                    }
+                    break;
+                case "boolean":
+                    let swc = q(`#${a[i]}Switch`, cP), ckBox = q(`#${a[i]}CheckBox`, cP)
+                    if (swc) {key = swc.checked} else if (ckBox) {key = ckBox.checked}
+                    break;
+                default:
+                    console.error(`PiPW Error: !! 不支持此设置项的类型: ${a[i]}`)
             }
+            readCfg[`${a[i]}`] = key
+        } else {
+            console.error(`PiPW Error: 无效的设置项: ${a[i]}`)
         }
     }
     writeCfg(readCfg); loadPiP(false, "Settings"); tipMsg("设置已更新");console.log("PiPW Log: 设置已保存", oldCfg, readCfg)
@@ -933,14 +937,14 @@ async function resetCfg() { //重置设置
             switch (typeof key) {
                 case "string":
                     let str = q(`#${a[i]}SetBox`, cP), radios = qAll(`[name=${a[i]}]`, cP)
-                    if (str) {
-                        str.value = key;
-                    } else if (radios) {
+                    if (radios.length!=0) {
                         for (let i = 0; i < radios.length; i++) {
                             if (radios[i].value == key) {
                                 radios[i].checked = true
                             }
                         }
+                    } else if (str) {
+                        str.value = key;
                     }
                     break;
                 case "number":
@@ -1050,14 +1054,20 @@ function getSettingsPage() {
         font-size: 16px;
         width: 90px;
         height: 40px;
-        line-height: 0;
-        outline: 0;
         box-shadow: 0 0 3px var(--pipws-fg);
         border: 1px solid var(--pipws-fg);
         border-radius: 10px;
         background: var(--pipws-bg);
         backdrop-filter: blur(12px);
         transition: .1s;
+    }
+    #PiPWSettings input.button {
+        line-height: 0;
+        outline: 0;
+    }
+    #PiPWSettings div.button {
+        line-height: 38px;
+        text-align: center;
     }
     #PiPWSettings .button:hover {
         box-shadow: 0 0 6px var(--pipws-fg);
@@ -1067,8 +1077,32 @@ function getSettingsPage() {
         border-width: 4px;
         box-shadow: 0 0 8px var(--pipws-fg);
     }
+    #PiPWSettings div.button:active {
+        line-height: 32px;
+        text-align: center;
+    }
     #PiPWSettings .part .button {
         backdrop-filter: none;
+    }
+    #PiPWSettings div.button.dynamicColor {
+        box-shadow: 0 0 4px var(--current-color);
+        border: 1px solid var(--current-color);
+        background: var(--current-color);
+        backdrop-filter: none;
+    }
+    #PiPWSettings div.button.dynamicColor:hover {
+        box-shadow: 0 0 8px var(--current-color);
+    }
+    #PiPWSettings div.button.dynamicColor:active {
+        line-height: 38px;
+        font-size: 13px;
+        border-width: 2px;
+        box-shadow: 0 0 12px 1px var(--current-color);
+    }
+    #PiPWSettings div.button.dynamicColor p {
+        filter: invert(80%);
+        color: var(--current-color);
+        text-shadow: 0 0 1px var(--current-color);
     }
 
     #PiPWSettings .button + p {
@@ -1094,6 +1128,12 @@ function getSettingsPage() {
         width: 320px;
         height: 160px;
         line-height: inherit;
+    }
+    #PiPWSettings [type=color] {
+        width: 0;
+        height: 0;
+        position: absolute;
+        opacity: 0;
     }
 
     #PiPWSettings .switch {
@@ -1550,7 +1590,41 @@ function getSettingsPage() {
             </label>
             <p>专辑封面</p>
         </div>
+        <div class="item">
+            <label class="radio">
+                <input type="radio" name="colorFrom" value="custom" />
+                <span class="slider button"></span>
+            </label>
+            <p>自定义</p>
+        </div>
         <br />
+        <p>自定义颜色</p>
+        <div style="height: 42px">
+            <div class="item">
+                <label style="--current-color: ${readCfg.colorCustom_text}">
+                    <div class="button dynamicColor">
+                        <p>文字</p>
+                    </div>
+                    <input id="colorCustom_textSetBox" type="color" value="${readCfg.colorCustom_text}">
+                </label>
+            </div>
+            <div class="item">
+                <label style="--current-color: ${readCfg.colorCustom_bg}">
+                    <div class="button dynamicColor">
+                        <p>背景</p>
+                    </div>
+                    <input id="colorCustom_bgSetBox" type="color" value="${readCfg.colorCustom_bg}">
+                </label>
+            </div>
+            <div class="item">
+                <label style="--current-color: ${readCfg.colorCustom_accent}">
+                    <div class="button dynamicColor">
+                        <p>进度条</p>
+                    </div>
+                    <input id="colorCustom_accentSetBox" type="color" value="${readCfg.colorCustom_accent}">
+                </label>
+            </div>
+        </div>
         <p>背景来源</p>
         <br />
         <div class="item">
@@ -1727,7 +1801,7 @@ function getSettingsPage() {
             <p>160p</p>
         </div>
         <br />
-        <p>封面分辨率 (建议不要频繁修改; 对本地文件无效)</p>
+        <p>封面分辨率 (建议不要频繁修改; 对本地缓存或文件无效)</p>
         <br />
         <input class="button textBox" id="albumCoverSizeSetBox" type="number" step="1" placeholder='${cfgDefault.albumCoverSize}'
             value="${readCfg.albumCoverSize}" />
@@ -1812,7 +1886,12 @@ function getSettingsPage() {
                         radios[i].addEventListener("change", ()=>{saveCfg(keyName)})
                     }
                 } else if (str) {
-                    if (str.tagName != "TEXTAREA") {str.addEventListener("keydown", e=>{if(e.key=="Enter"){saveCfg(keyName)}});} //回车应用
+                    if (str.type == "color") {
+                    str.addEventListener("change", e=>{
+                        saveCfg(keyName)
+                        e.target.parentElement.style.setProperty("--current-color", e.target.value);
+                    });}
+                    else if (str.tagName != "TEXTAREA") {str.addEventListener("keydown", e=>{if(e.key=="Enter"){saveCfg(keyName)}});} //回车应用
                     try{q(`#applyButton-${keyName}`, cP).addEventListener("click", ()=>{saveCfg(keyName)});}catch{}
                 }
                 break;
