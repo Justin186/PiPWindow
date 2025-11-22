@@ -8,8 +8,9 @@
 
 ![image](https://github.com/user-attachments/assets/3e24fe01-1e79-4f84-8de3-19adc115e533)
 
+⚠️ 由于本人已不再使用betterncm，本项目无限期停更
+
 ### <a href="https://github.com/Lukoning/PiPWindow/releases">更新日志在RELEASES, HERE PLEASE -></a>
-# 欢迎积极的Issue和Pull Request
 # 说明
 <p>点击歌曲红心❤️旁按钮或⚙️设置页链接打开/关闭◲小窗</p>
 <p>可拖动↔↕可调整大小</p>
