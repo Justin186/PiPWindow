@@ -67,11 +67,17 @@ window.PiPWTestDomWindow = () => {
       .dom-time { margin-top: 5px; color: #b7bbc5; font-size: var(--dom-time-size); font-variant-numeric: tabular-nums; }
       .dom-progress { height: var(--dom-progress-size); margin-top: 3px; background: #555860; }
       .dom-progress-value { width: 100%; height: 100%; background: #70d6ff; transform: scaleX(0); transform-origin: left center; }
+      :root { --dom-timing: cubic-bezier(0.45, 0, 0.07, 1); }
       .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); bottom: var(--dom-padding); overflow: hidden; line-height: 1.2; }
-      .dom-lyric { margin-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #777b86; font-size: var(--dom-next-lyric-size); }
-      .dom-lyric.is-current { color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; }
-      .dom-translation { margin-top: 2px; color: #8f929a; font-size: var(--dom-translation-size); }
-      .dom-dynamic { margin-bottom: var(--dom-lyric-gap); color: #777b86; white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; }
+      .dom-lyric { margin-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #777b86; font-size: var(--dom-next-lyric-size); transition: opacity 0.5s var(--dom-timing), color 0.5s var(--dom-timing); opacity: 0.45; }
+      .dom-lyric.is-current { color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; opacity: 1; }
+      .dom-lyric-enter { animation: dom-lyric-in 0.5s var(--dom-timing); }
+      @keyframes dom-lyric-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      .dom-lyric-exit { animation: dom-lyric-out 0.5s var(--dom-timing); }
+      @keyframes dom-lyric-out { from { opacity: 1; } to { opacity: 0.45; } }
+      .dom-translation { margin-top: 2px; color: #8f929a; font-size: var(--dom-translation-size); transition: opacity 0.4s ease; }
+      .dom-lyric:not(.is-current) .dom-translation { opacity: 0.45; }
+      .dom-dynamic { margin-bottom: var(--dom-lyric-gap); color: #777b86; white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; transition: opacity 0.4s ease; }
       .dom-word { position: relative; display: inline-block; }
       .dom-word > span { display: block; }
       .dom-word-played { position: absolute !important; inset: 0 auto auto 0; width: 100%; overflow: hidden; color: var(--dom-accent, #70d6ff); clip-path: inset(0 100% 0 0); will-change: clip-path; }
