@@ -1,0 +1,1201 @@
+/*This plugin is licensed under the GNU/GPL-3.0
+**Copyright (C) 2024-2025 Lukoning
+*/
+
+import { state, DcvUrl, discUrl, pO, pC } from "./state.js";
+import { cE, q, qAll, cn2jp, DEBUG, taskbarButton, tipMsg, reRatio, getDpr } from "./utils.js";
+import { colorPick } from "./color.js";
+
+/**
+ * 核心渲染模块：负责把歌曲信息、歌词、封面等绘制到 canvas，
+ * 并通过 Picture-in-Picture 显示为小窗。
+ *
+ * 注意：loadPiP 内部嵌套了大量依赖其局部作用域的函数（歌词获取/处理、
+ * 绘制样式等），因此整体保留在此模块中，仅将对外部全局状态的访问
+ * 改为通过 state 对象。
+ */
+
+/** 把 canvas 捕获为视频流并请求 PiP 小窗 */
+HTMLCanvasElement.prototype.toPiP = function () {
+  const startVideoFrameLoop = () => {
+    if (!(state.v instanceof HTMLVideoElement) || !state.v.requestVideoFrameCallback || state.videoFrameLoopStarted) {
+      return;
+    }
+    state.videoFrameLoopStarted = true;
+    const token = ++state.videoFrameLoopToken;
+    const renderAfterVideoFrame = () => {
+      state.v.requestVideoFrameCallback(() => {
+        if (token !== state.videoFrameLoopToken) {
+          return;
+        }
+        loadPiP(false, "VideoFrame");
+        if (!state.v.paused && !state.v.ended) {
+          renderAfterVideoFrame();
+        } else {
+          state.videoFrameLoopStarted = false;
+        }
+      });
+    };
+    renderAfterVideoFrame();
+  };
+  const stopVideoFrameLoop = () => {
+    state.videoFrameLoopToken++;
+    state.videoFrameLoopStarted = false;
+  };
+  if (!(state.v instanceof HTMLVideoElement)) {
+    state.v = cE("video");
+    state.v.addEventListener("loadedmetadata", async () => {
+      try {
+        //请求小窗
+        state.v.requestPictureInPicture().then((p) => {
+          state.thePiPWindow = p;
+          reRatio(p.height); //自适应分辨率
+          loadPiP(false, "PiP-created");
+          p.addEventListener("resize", (e) => {
+            reRatio(e.target.height);
+            loadPiP(false, "PiP-resize");
+          });
+          taskbarButton(state.readCfg.showTaskbarButton); //任务栏按钮
+        });
+        let pS = ".m-player:not(.f-dn)";
+        //控制按钮设置
+        navigator.mediaSession.setActionHandler("play", () => {
+          state.v.play();
+          navigator.mediaSession.playbackState = "playing";
+        });
+        navigator.mediaSession.setActionHandler("pause", () => {
+          state.v.pause();
+          navigator.mediaSession.playbackState = "paused";
+        });
+        navigator.mediaSession.setActionHandler("previoustrack", () => {
+          q(`${pS} .btnc-prv`).click();
+        });
+        navigator.mediaSession.setActionHandler("nexttrack", () => {
+          q(`${pS} .btnc-nxt`).click();
+        });
+        if (state.isVLsnAdded) {
+          return; //防止重复加监听器
+        }
+        //小窗暂停/播放同步到主窗口
+        function ncmPlay() {
+          if (!state.DontPlay) {
+            try {
+              q(`${pS} .btnp-play`).click();
+            } catch {}
+          }
+          state.DontPause = false;
+        }
+        function ncmPause() {
+          if (!state.DontPause) {
+            try {
+              q(`${pS} .btnp-pause`).click();
+            } catch {}
+          }
+          state.DontPlay = false;
+        }
+        state.v.addEventListener("play", () => {
+          startVideoFrameLoop();
+          ncmPlay();
+        });
+        state.v.addEventListener("pause", () => {
+          stopVideoFrameLoop();
+          ncmPause();
+        });
+        //小窗打开/关闭逻辑
+        state.v.addEventListener("enterpictureinpicture", (e) => {
+          console.log("PiPW Log: PiP窗口已创建", state.v);
+          let s = betterncm.ncm.getPlayingSong();
+          if (!s) {
+            s = { state: 1 };
+          }
+          if (state.readCfg.autoHideMainWindow) {
+            mwf.cef.R$exec("winhelper.showWindow", "minimize");
+            mwf.cef.R$call("winhelper.showWindow", "hide");
+          }
+          tipMsg("已打开小窗");
+          q("svg", state.b).innerHTML = pC;
+          state.b.setAttribute("style", "fill: currentColor; opacity: 1");
+          state.b.title = "关闭小窗";
+          if (s.state == 1) {
+            state.v.pause();
+          }
+          state.DontPlay = false;
+          if (state.debugMode) {
+            console.log(e);
+          }
+        });
+        state.v.addEventListener("leavepictureinpicture", (e) => {
+          state.DontPause = true;
+          let p = state.v.paused;
+          tipMsg("已关闭小窗");
+          q("svg", state.b).innerHTML = pO;
+          state.b.setAttribute("style", "");
+          state.b.title = "打开小窗";
+          setTimeout(() => {
+            if (state.v.paused != p) {
+              //状态不一致，判定为按下关闭按钮
+              let c = state.readCfg.whenClose;
+              if (c == "pause") {
+                state.DontPause = false;
+                ncmPause();
+              } else if (c == "shutdown") {
+                state.DontPause = false;
+                ncmPause();
+                if (state.debugMode) {
+                  tipMsg("调试模式：触发退出云音乐");
+                  return;
+                }
+                mwf.cef.R$call("winhelper.showWindow", "hide");
+                mwf.cef.R$exit();
+              }
+            } else if (!p && state.readCfg.whenBack == "back") {
+              mwf.cef.R$call("winhelper.showWindow", "show");
+            } else if (state.readCfg.whenCloseOrBack_paused == "back") {
+              mwf.cef.R$call("winhelper.showWindow", "show");
+            }
+          }, 10);
+          if (state.debugMode) {
+            console.log(e);
+          }
+        });
+        //主窗口暂停/播放同步到小窗
+        legacyNativeCmder.appendRegisterCall("PlayState", "audioplayer", (_, __, st) => {
+          //监听播放状态变动
+          if (st === 2) {
+            state.DontPause = true;
+            state.v.pause();
+            try {
+              state.amllbgv.pause();
+            } catch {}
+          } else if (st === 1) {
+            state.DontPlay = true;
+            state.v.play();
+            startVideoFrameLoop();
+            try {
+              state.amllbgv.play();
+            } catch {}
+          }
+        });
+        state.isVLsnAdded = true;
+      } catch (e) {
+        console.error("PiPW Error: PiP窗口创建出错，详情：\n", e);
+        tipMsg("PiP窗口创建出错，详见JavaScript控制台", "err");
+      }
+    });
+  }
+  state.v.id = "PiPW-VideoE";
+  let cs = this.captureStream(0);
+  state.captureTrack = cs.getVideoTracks()[0];
+  if (state.captureTrack) {
+    state.captureTrack.contentHint = "motion";
+  }
+  state.v.srcObject = cs; //刷新源
+  state.v.controls = state.debugMode;
+  state.v.muted = true;
+  state.v.playsInline = true;
+  if (state.debugMode) {
+    DEBUG();
+  }
+  state.DontPlay = true; //解决打开小窗时自动播放的问题
+  state.v.play(); //否则黑窗
+  startVideoFrameLoop();
+};
+
+/** 主渲染函数：合并异步重绘请求，避免多个渲染同时执行 */
+export function loadPiP(isToPiP = true, from = "unknow") {
+  let renderStart = performance.now();
+  if (state.showRefreshing) {
+    state.fpsRequestCount++;
+  } else {
+    state.fpsWindowStart = 0;
+    state.fpsRequestCount = 0;
+    state.fpsRenderCount = 0;
+  }
+  if (state.redrawInProgress) {
+    state.redrawPending = true;
+    return Promise.resolve();
+  }
+  state.redrawInProgress = true;
+  return loadPiPImpl(isToPiP, from).finally(() => {
+    let renderDuration = performance.now() - renderStart;
+    if (state.showRefreshing && renderDuration >= 50) {
+      console.warn(
+        `PiPW SlowFrame: ${renderDuration.toFixed(1)}ms，来源${from}，动态歌词${state.isDynamicLyrics}，歌词行${state.lrcLineCache.line}，canvas ${state.c?.width}x${state.c?.height}`
+      );
+    }
+    state.redrawInProgress = false;
+    state.captureTrack?.requestFrame?.();
+    if (state.showRefreshing) {
+      state.fpsRenderCount++;
+      let now = Date.now();
+      if (!state.fpsWindowStart) {
+        state.fpsWindowStart = now;
+      } else if (now - state.fpsWindowStart >= 1000) {
+        let seconds = (now - state.fpsWindowStart) / 1000,
+          track = state.v?.srcObject?.getVideoTracks?.()[0],
+          settings = track?.getSettings?.();
+        console.log(
+          `PiPW FPS: 请求${(state.fpsRequestCount / seconds).toFixed(1)}次/s，完成${(state.fpsRenderCount / seconds).toFixed(1)}帧/s，视频轨道${settings?.frameRate ?? "?"}fps，canvas ${state.c?.width}x${state.c?.height}，DPR ${getDpr()}`
+        );
+        state.fpsWindowStart = now;
+        state.fpsRequestCount = 0;
+        state.fpsRenderCount = 0;
+      }
+    }
+    if (state.redrawPending) {
+      state.redrawPending = false;
+      loadPiP(false, "coalesced");
+    }
+  });
+}
+
+async function loadPiPImpl(isToPiP = true, from = "unknow") {
+  let PiPE = document.pictureInPictureElement;
+  if (!isToPiP && !PiPE && !state.debugMode) {
+    return;
+  }
+  if (PiPE && PiPE.id != "PiPW-VideoE") {
+    tipMsg("PiP窗口被占用", "err");
+    if (!state.debugMode) {
+      return;
+    }
+  }
+  let startTime = Date.now();
+  try {
+    let nrInfo = false /*need re-*/,
+      nrHead = false,
+      chigai = false /*曲目不同以往(?)*/,
+      ldTxt = state.readCfg.customLoadingTxt;
+    /*分辨率*/
+    let r = state.readCfg.resolutionRatio;
+    if (r == "auto") {
+      state.autoRatio = true;
+      r = state.thePiPWindow ? Math.round(state.thePiPWindow.height * getDpr()) : state.autoRatioValue;
+      state.autoRatioValue = r;
+    } else {
+      state.autoRatio = false;
+      r = r * 1;
+    }
+
+    let pS = betterncm.ncm.getPlayingSong(),
+      data;
+    if (pS) {
+      data = pS.data;
+      if (data.track && state.readCfg.useCloudDataForLocalFile) {
+        //track为本地歌曲对应云端数据, 是否使用这个数据会影响歌词请求、信息展示等
+        data = data.track;
+      }
+    }
+
+    if (data.id != state.songIdCache) {
+      getInfo();
+      chigai = true;
+      state.songIdCache = data.id;
+      state.nrLrc = true;
+      nrHead = true;
+    }
+    updateTime();
+    if (
+      from == "Settings" &&
+      (state.oldCfg.lyricsFrom != state.readCfg.lyricsFrom ||
+        state.oldCfg.lyricsCustomSources != state.readCfg.lyricsCustomSources)
+    ) {
+      state.nrLrc = true;
+    }
+
+    let cvSizeX = r / 3,
+      cvSizeY = r / 3;
+    /*封面*/
+    if (!state.cover) {
+      state.cover = new Image();
+    }
+    let s = state.readCfg.albumCoverSize,
+      thbn = `thumbnail=${s}y${s}`;
+    state.readCfg.useFullCover ? (thbn = "") : "";
+    if (state.readCfg.allowNonsquareCover) {
+      cvSizeX = state.cover.width * (cvSizeY / state.cover.height);
+      thbn = "";
+    }
+    try {
+      state.OcvUrl = q("img.j-cover").src;
+      if (state.OcvUrl != state.OcvUrlCache) {
+        nrHead = true;
+        state.OcvUrlCache = state.OcvUrl;
+      } //不对头…刷新！(解决断网有时获取封面为空问题)
+    } catch {}
+    try {
+      let u = data.album.picUrl;
+      if (!u) {
+        ya.ma.no.su.su.me;
+        throw new Error();
+      } else {
+        state.cvUrl = `orpheus://cache/?${u}?imageView&enlarge=1&type=webp${thbn == "" ? "" : `&${thbn}`}`;
+      }
+    } catch {
+      try {
+        state.cvUrl = state.OcvUrl.replace(/thumbnail=([^&]+)/, `type=webp${thbn == "" ? "" : `&${thbn}`}`);
+        if (!state.cvUrl) {
+          state.cvUrl = null;
+        }
+      } catch {
+        state.cvUrl = null;
+      }
+    }
+    if (state.cvUrl != state.cvUrlCache) {
+      nrHead = true;
+    }
+    function getInfo() {
+      /*歌名*/
+      try {
+        state.song.name = data.name;
+        switch (state.readCfg.trackInfoShow) {
+          case "auto":
+            trans();
+            if (state.song.nameAnother == "") {
+              album();
+            }
+            break;
+          case "album":
+            album();
+            break;
+          case "translation":
+            trans();
+            break;
+          default:
+            album();
+        }
+        function trans() {
+          let t = data.transNames,
+            a = data.alias;
+          t = t ? t[0] : null, (a = a ? a[0] : null);
+          if (t || a) {
+            state.song.nameAnother = `${t || ""}${t && a ? " " : ""}${a || ""}`;
+          } else {
+            state.song.nameAnother = "";
+          }
+        }
+        function album() {
+          let n = data.album.name,
+            t = data.album.transNames;
+          n = n ? n : null, (t = t ? t[0] : null);
+          if (n || t) {
+            state.song.nameAnother = `${n || ""}${t ? " (" + t + ")" : ""}`;
+          } else {
+            state.song.nameAnother = "未知专辑";
+          }
+        }
+      } catch {
+        let t = q(".m-pinfo .j-title");
+        state.song.name = t ? t.title : "没有曲目";
+        try {
+          state.song.nameAnother = q(".m-pinfo .j-title .s-fc4").textContent.slice(1).slice(0, -1);
+        } catch {}
+      }
+
+      /*歌手*/
+      let sa = "",
+        saE;
+      try {
+        saE = data.artists;
+        for (let i = 0; i < saE.length; i++, sa = sa + " / ") {
+          sa = sa + saE[i].name;
+        }
+        sa = sa.slice(0, -3); /*处理多余斜杠*/
+        state.song.artist = sa == "" ? "未知艺术家" : sa;
+      } catch {
+        saE = qAll(".m-pinfo .bar > .j-title span:first-child *");
+        if (saE && saE.length != 0) {
+          for (let i = 0; i < saE.length; i++, sa = sa + " / ") {
+            sa = sa + saE[i].textContent;
+          }
+          sa = sa.slice(0, -3); /*处理多余斜杠*/
+          state.song.artist = sa == "未知" ? "未知艺术家" : sa;
+        }
+      }
+    }
+
+    function updateTime() {
+      try {
+        let current = state.playProgress / 1000,
+          total = data.duration / 1000;
+        if (!Number.isFinite(current)) {
+          current = state.tC;
+        }
+        if (!Number.isFinite(total) || total <= 0) {
+          return;
+        }
+        state.tC = current;
+        state.tT = total;
+        state.tP = Math.max(0, Math.min(1, current / total));
+        state.tR = total - current;
+        let currentMinutes = Math.floor(current / 60),
+          currentSeconds = Math.floor(current % 60),
+          currentText = `${currentMinutes}:${currentSeconds < 10 ? "0" : ""}${currentSeconds}`,
+          totalMinutes = Math.floor(total / 60),
+          totalSeconds = Math.floor(total % 60),
+          totalText = `${totalMinutes}:${totalSeconds < 10 ? "0" : ""}${totalSeconds}`,
+          remainingMinutes = totalMinutes - currentMinutes,
+          remainingSeconds = totalSeconds - currentSeconds;
+        if (remainingSeconds < 0) {
+          remainingMinutes--;
+          remainingSeconds += 60;
+        }
+        let remainingText = `-${remainingMinutes}:${remainingSeconds < 10 ? "0" : ""}${remainingSeconds}`;
+        state.t = state.readCfg.timeInfo == "CurrentRemaining" ? `${currentText} / ${remainingText}` : `${currentText} / ${totalText}`;
+      } catch {}
+    }
+
+    /*歌词*/
+    let lyrics = {
+        M: {
+          0: "暂无歌词",
+          1: "",
+          2: "",
+          3: "",
+          4: "",
+        },
+        T: {
+          0: "",
+          1: "",
+          2: "",
+          3: "",
+          4: "",
+        },
+        currentT: 0,
+        currentD: 0,
+      },
+      offset = state.readCfg.lyricsOffset * 1000;
+    if (state.readCfg.lyricsFrom != "RNP") {
+      document.removeEventListener("lyrics-updated", rnpLrcUpdate);
+      state.isLrcRnpLsnAdded = false;
+    }
+    switch (state.readCfg.lyricsFrom) {
+      case "RNP":
+        getLrcRnp();
+        break;
+      case "OriginalLyricBar":
+        getLrcOrg();
+        break;
+      case "LibLyric":
+        getLrcLibLyric();
+        break;
+      case "Custom":
+        getLrcCustom();
+        break;
+      default:
+        showLrcErr("该词源设置项不存在");
+    }
+    function showLrcErr(e = "没有详细错误信息") {
+      state.isJp = false;
+      if (state.readCfg.showLyricsErrorTip) {
+        (lyrics.M[0] = "暂无歌词"), (lyrics.T[0] = "");
+        (lyrics.M[1] = `当前歌词源错误: ${state.readCfg.lyricsFrom}`), (lyrics.T[1] = e);
+      }
+      state.pLrc = {
+        0: { time: 0, duration: Infinity, originalLyric: lyrics.M[0], translatedLyric: lyrics.T[0] },
+        1: { time: Infinity, duration: 0, originalLyric: lyrics.M[1], translatedLyric: lyrics.T[1] },
+      };
+      state.pLrcKeys = Object.keys(state.pLrc);
+    }
+    function getLrcErr(e) {
+      state.lrcNowLoading = false;
+      console.error("PiPW Error: 获取歌词时出错，详情：", e);
+      Object.prototype.toString.call(e) === "[object Object]"
+        ? e.message === void 0
+          ? (e = JSON.stringify(e))
+          : (e = e.message)
+        : "";
+      showLrcErr(e);
+    }
+    function rnpLrcUpdate(e) {
+      state.pLrc = JSON.parse(JSON.stringify(e.detail.lyrics));
+      handleLyrics();
+      console.log("PiPW Log: GotLyrics", state.pLrc);
+    }
+    function getLrcRnp() {
+      if (!loadedPlugins.RefinedNowPlaying) {
+        showLrcErr("依赖的插件未安装");
+      }
+      try {
+        if (!state.isLrcRnpLsnAdded) {
+          document.addEventListener("lyrics-updated", rnpLrcUpdate);
+          state.isLrcRnpLsnAdded = true;
+          rnpLrcUpdate({ detail: window.currentLyrics });
+        }
+        lrcUpdate();
+      } catch (e) {
+        console.error(`PiPW Error: 获取歌词时出错，详情：\n${e}`);
+        showLrcErr(e);
+      }
+    }
+    function getLrcOrg() {
+      try {
+        (lyrics.M[0] = q(".m-lyric .s-fc0").textContent), (lyrics.T[0] = q(".m-lyric .s-fc3").textContent);
+      } catch {
+        try {
+          lyrics.M[0] = q(".m-lyric p").textContent;
+        } catch {}
+      }
+    }
+    async function getLrcLibLyric() {
+      if (state.lrcNowLoading) {
+        lyrics.M[0] = ldTxt;
+        return;
+      }
+      if (!loadedPlugins.liblyric) {
+        showLrcErr("依赖的插件未安装");
+      }
+      try {
+        let ll = loadedPlugins.liblyric;
+        if (state.nrLrc) {
+          state.lrcNowLoading = true;
+          state.nrLrc = false;
+          state.lrcCache = await ll.getLyricData(data.track ? data.track.id : data.id);
+          console.log("PiPW Log: Lyrics", state.lrcCache);
+          state.pLrc = ll.parseLyric(
+            state.lrcCache.lrc.lyric,
+            state.lrcCache.tlyric ? (state.lrcCache.ytlrc ? state.lrcCache.ytlrc.lyric : state.lrcCache.tlyric.lyric) : "",
+            state.lrcCache.romalrc ? (state.lrcCache.yromalrc ? state.lrcCache.yromalrc.lyric : state.lrcCache.romalrc.lyric) : "",
+            state.lrcCache.yrc ? (state.lrcCache.yrc.lyric ? state.lrcCache.yrc.lyric : "") : "" //为什么lrcCache.yrc.lyric可以是null...
+          );
+          handleLyrics();
+          console.log("PiPW Log: ParsedLyrics", state.pLrc);
+          state.lrcNowLoading = false;
+        }
+        lrcUpdate();
+      } catch (e) {
+        getLrcErr(e);
+      }
+    }
+    async function getLrcCustom() {
+      if (state.lrcNowLoading) {
+        lyrics.M[0] = ldTxt;
+        return;
+      }
+      if (!loadedPlugins.liblyric) {
+        showLrcErr("依赖的插件未安装");
+      }
+      try {
+        let ll = loadedPlugins.liblyric;
+        if (state.nrLrc) {
+          state.lrcNowLoading = true;
+          state.nrLrc = false;
+          let songDetails = {
+            track: data.name,
+            trackId: data.track ? data.track.id : data.id,
+            artist: data.artists[0].name,
+            artists: state.song.artist,
+            album: data.album.name,
+            albumId: data.album.id,
+          };
+          let url = state.readCfg.lyricsCustomSources.replace(/\$\{(\w+)\}/g, (_, p1) => {
+            return songDetails[p1];
+          });
+          fetch(url)
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error(`${response.status} ${response.statusText}`);
+              }
+              return response.text();
+            })
+            .then((lrc) => {
+              state.pLrc = ll.parseLyric("", "", "", lrc);
+              handleLyrics();
+              console.log("PiPW Log: ParsedLyrics", state.pLrc);
+              state.lrcNowLoading = false;
+            })
+            .catch((e) => {
+              getLrcErr(e);
+            });
+        }
+        lrcUpdate();
+      } catch (e) {
+        getLrcErr(e);
+      }
+    }
+    function handleLyrics() {
+      if (state.pLrc.length == 0) {
+        state.isJp = false;
+      } else {
+        state.pLrcKeys = Object.keys(state.pLrc);
+        for (let i = 0; i < state.pLrcKeys.length; i++) {
+          state.isJp = /[ぁ-ヿ]/g.test(state.pLrc[i].originalLyric);
+          if (state.isJp == true) {
+            break;
+          }
+        }
+        for (let i = 0; i < state.pLrcKeys.length; i++) {
+          let o = state.pLrc[i].originalLyric,
+            t = state.pLrc[i].translatedLyric,
+            d = JSON.stringify(state.pLrc[i].dynamicLyric);
+          if (o == t) {
+            state.pLrc[i].translatedLyric = "";
+          } //优化歌词展示体验
+          o = state.pLrc[i].originalLyric.replace(/\s+/g, " ").trim();
+          if (o == "") {
+            if (i + 1 == state.pLrcKeys.length) {
+              delete state.pLrc[i];
+              state.pLrcKeys = Object.keys(state.pLrc);
+              continue;
+            } else {
+              (state.pLrc[i].originalLyric = "· · ·"), (state.pLrc[i].translatedLyric = "");
+            }
+          } else if (state.isJp && state.readCfg.lyricsHanzi2Kanji) {
+            state.pLrc[i].originalLyric = cn2jp(o);
+            try {
+              d = cn2jp(d);
+            } catch {}
+          } else {
+            state.pLrc[i].originalLyric = o;
+          }
+          try {
+            d = d.replace(/\s+/g, " ").trim();
+            state.pLrc[i].dynamicLyric = JSON.parse(d);
+          } catch {}
+        }
+      }
+    }
+    function lrcUpdate() {
+      //更新歌词数据
+      if (state.pLrc.length == 0) {
+        return;
+      }
+      let l = state.pLrcKeys.length,
+        p = state.playProgress + offset;
+      // 歌词按时间排序，当前行只会向后移动。
+      // 缓存上次定位的行，避免每帧从头全量扫描（长歌词时开销明显）。
+      let start = 0;
+      const cache = state.lrcLineCache;
+      if (cache.keys === state.pLrcKeys && cache.line >= 0) {
+        const cl = state.pLrc[cache.line];
+        if (p >= cl.time && p < cl.time + cl.duration) {
+          start = cache.line; // 仍在缓存行内，直接复用
+        } else if (p >= cl.time + cl.duration) {
+          start = cache.line + 1; // 向后继续找
+        } else {
+          start = 0; // 回退（如 seek 到前面）
+        }
+      } else {
+        cache.keys = state.pLrcKeys;
+      }
+      for (let i = start; i < l; i++) {
+        let d = state.pLrc[i].duration;
+        if (p < state.pLrc[i].time + d || i == l - 1) {
+          cache.line = i;
+          if (state.pLrc[i].dynamicLyric && state.readCfg.dynamicLyrics) {
+            //第1行主歌词
+            lyrics.M[0] = state.pLrc[i].dynamicLyric;
+            lyrics.currentT = state.pLrc[i].dynamicLyricTime;
+          } else {
+            lyrics.M[0] = state.pLrc[i].originalLyric;
+            lyrics.currentT = state.pLrc[i].time;
+          }
+          lyrics.currentD = d == 0 ? data.duration - state.pLrc[i].time : d;
+          for (let j = 1; j < 5; j++) {
+            lyrics.M[j] = i + j < l ? state.pLrc[i + j].originalLyric : "";
+          } //2~5行主歌词
+          //1~5行翻译/拉丁化歌词
+          switch (state.readCfg.lyricLine2Show) {
+            case "none":
+              for (let i = 0; i < 5; i++) {
+                lyrics[`T${i}`] = "";
+              }
+              break;
+            case "auto":
+              trans();
+              latin(false);
+              break;
+            case "translation":
+              trans();
+              break;
+            case "latinization":
+              latin();
+              break;
+            default:
+              trans();
+              latin(false);
+          }
+          break;
+          function trans() {
+            for (let j = 0; j < 5; j++) {
+              lyrics.T[j] = i + j < l ? (state.pLrc[i + j].translatedLyric ? state.pLrc[i + j].translatedLyric : "") : "";
+            }
+          }
+          function latin(b = true) {
+            for (let j = 0; j < 5; j++) {
+              if (lyrics.T[j] == "" || b) {
+                lyrics.T[j] = i + j < l ? (state.pLrc[i + j].romanLyric ? state.pLrc[i + j].romanLyric : "") : "";
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /*取色环节*/
+    chigai ? (state.readCfg.colorFrom == "albumCover" ? colorPick(state.cover ? state.cover : null) : colorPick()) : "";
+    if (state.color.text != state.colorCache.text || state.color.bg != state.colorCache.bg) {
+      nrHead = true;
+      (state.colorCache.text = state.color.text), (state.colorCache.bg = state.color.bg);
+    }
+
+    /*创建canvas*/
+    loadC();
+    function loadC() {
+      let [w, h] = state.readCfg.aspectRatio.split(":").map(Number),
+        rw = Math.round(r * (w / h)); //因为width不能设为小数
+      if (!state.c || !state.cC) {
+        state.c = cE("canvas");
+        state.cC = state.c.getContext("2d", { alpha: false }); //alpha:false可有效解决内存溢出问题
+        console.log("PiPW Log: canvas元素已创建", state.c, state.cC);
+      }
+      if (!state.bgc || !state.bgcC) {
+        state.bgc = cE("canvas");
+        state.bgcC = state.bgc.getContext("2d", { alpha: false });
+        console.log("PiPW Log: 背景canvas元素已创建", state.bgc, state.bgcC);
+      }
+      if (state.c.width != rw || state.c.height != r) {
+        state.c.width = rw;
+        state.c.height = r;
+        nrHead = true;
+        state.bgc.width = rw;
+        state.bgc.height = r;
+      }
+    }
+
+    /*字体*/
+    let f = state.readCfg.customFonts,
+      fM = f,
+      fT = f; //这里f后期也许单独做一个界面字体
+    let gFW = state.readCfg.generalFontWeight,
+      oLFW = state.readCfg.originalLyricsFontWeight,
+      tLFW = state.readCfg.translatedLyricsFontWeight;
+
+    /*日文字体更换*/
+    state.readCfg.useJapaneseFonts && state.isJp ? (fM = state.readCfg.customJapaneseFonts) : "";
+
+    if (from == "Settings") {
+      getInfo();
+      nrHead = true;
+    } //如果是改字体/显示的信息或者颜色有变……
+
+    nrHead ? reloadHead() : "";
+    function reloadHead() {
+      if (!state.cvUrl) {
+        state.cover.src = DcvUrl;
+        state.readCfg.showDiscWhenNoCover ? "" : (cvSizeX = r / 96);
+      } else {
+        state.cover.src = state.cvUrl;
+      }
+      state.cvUrlCache = state.cvUrl;
+      nrInfo = true;
+    }
+
+    let o1 = r / 480,
+      o2 = r / 240,
+      o3 = r / 160,
+      o5 = r / 96,
+      o6 = r / 80,
+      o9 = r / 53.3333,
+      o10 = r / 48,
+      o12 = r / 40,
+      o15 = r / 32,
+      o20 = r / 24,
+      o21p5 = r / 22.3256,
+      o25 = r / 19.2,
+      o30 = r / 16,
+      o30p5 = r / 15.7377,
+      o35 = r / 13.7143,
+      o40 = r / 12,
+      o45 = r / 10.6667,
+      o55 = r / 8.7272,
+      o60 = r / 8,
+      o105 = r / 4.57143,
+      o150 = r / 3.2,
+      o480 = r,
+      txtMgL = cvSizeX + o10,
+      x = 0,
+      y = 0;
+    state.cC.textAlign = "left";
+
+    y = cvSizeY + o3;
+    state.cC.clearRect(0, y, state.c.width, state.c.height);
+
+    let lrcFS = o55,
+      lrcMgT = o45,
+      lrcMgL = o15,
+      mLrcMgL = lrcMgL,
+      lrcTop = cvSizeY + lrcMgT,
+      lrcSSS = state.readCfg.lyricsTaperOff;
+    let lrcLine = {
+      0: lrcTop + lrcFS,
+      1: lrcTop + lrcFS * 2 + o10,
+      2: lrcTop + lrcFS * 3 + o12,
+      3: lrcTop + lrcFS * 4 + o10,
+      4: lrcTop + lrcFS * 5 + o2,
+    };
+    function lyricStyle(line = 0, isT = false, isU /*Unplayed*/ = false) {
+      if (!isT) {
+        switch (line) {
+          case 0:
+            if (!isU) {
+              (state.cC.fillStyle = state.color.text), (state.cC.font = `${oLFW} ${lrcFS}px ${fM}`), (lrcMgL = o15);
+            } else {
+              (state.cC.fillStyle = state.color.textT42), (state.cC.font = `${oLFW} ${lrcFS}px ${fM}`), (lrcMgL = o15);
+            }
+            return;
+          case 1:
+            (state.cC.fillStyle = state.color.textT56), (state.cC.font = `${oLFW} ${lrcFS - o10}px ${fM}`), lrcSSS ? (lrcMgL = o12) : "";
+            return;
+          case 2:
+            (state.cC.fillStyle = state.color.textT56),
+              (state.cC.font = `${oLFW} ${lrcSSS ? lrcFS - o15 : lrcFS - o10}px ${fM}`),
+              lrcSSS ? (lrcMgL = o9) : "";
+            return;
+          case 3:
+            (state.cC.fillStyle = state.color.textT56),
+              (state.cC.font = `${oLFW} ${lrcSSS ? lrcFS - o20 : lrcFS - o10}px ${fM}`),
+              lrcSSS ? (lrcMgL = o6) : "";
+            return;
+          case 4:
+          default:
+            (state.cC.fillStyle = state.color.textT56),
+              (state.cC.font = `${oLFW} ${lrcSSS ? lrcFS - o25 : lrcFS - o10}px ${fM}`),
+              lrcSSS ? (lrcMgL = o3) : "";
+            return;
+        }
+      } else {
+        switch (line) {
+          case 0:
+            (state.cC.fillStyle = state.color.textT56), (state.cC.font = `${tLFW} ${lrcFS - o5}px ${fT}`), (lrcMgL = o15);
+            return;
+          case 1:
+            (state.cC.fillStyle = state.color.textT31),
+              (state.cC.font = `${tLFW} ${lrcFS - o15}px ${fT}`),
+              lrcSSS ? (lrcMgL = o12) : "";
+            return;
+          case 2:
+            (state.cC.fillStyle = state.color.textT31),
+              (state.cC.font = `${tLFW} ${lrcSSS ? lrcFS - o20 : lrcFS - o15}px ${fT}`),
+              lrcSSS ? (lrcMgL = o9) : "";
+            return;
+          case 3:
+          default:
+            (state.cC.fillStyle = state.color.textT31),
+              (state.cC.font = `${tLFW} ${lrcSSS ? lrcFS - o25 : lrcFS - o15}px ${fT}`),
+              lrcSSS ? (lrcMgL = o6) : "";
+            return;
+        }
+      }
+    }
+    function updateMLrcMgL(w, now) {
+      if (!state.readCfg.autoScroll) {
+        return;
+      }
+      if (!now) {
+        now = (state.playProgress + offset - lyrics.currentT) / lyrics.currentD;
+        now = lyrics.currentT > state.playProgress + offset ? 0 : now > 1 ? 1 : now;
+      }
+      let l = w * now;
+      if (w > state.c.width - lrcMgL && l + o150 > state.c.width - lrcMgL) {
+        mLrcMgL = 0 - (l + lrcMgL - state.c.width) + lrcMgL - o150;
+      }
+    }
+
+    state.isDynamicLyrics = false;
+    if (Array.isArray(lyrics.M[0])) {
+      state.isDynamicLyrics = true;
+      let lyricDO = "" /*lyricDynamicOrigin*/,
+        l = lyrics.M[0].length,
+        now = 0,
+        nowWidth = 0;
+      lyricDO = lyrics.M[0].map((item) => item.word).join("");
+      lyricStyle(0, false, true);
+      // 逐字歌词：词本身不随帧变化，仅进度变化。
+      // 缓存每词宽度与整行宽度，避免每帧重复 measureText（这是逐字歌词卡顿的主因）。
+      let dynamicFont = `${oLFW} ${lrcFS}px ${fM}`,
+        dynamicKey = `${lyricDO}|${dynamicFont}|${state.color.textT42}|${state.color.text}`;
+      if (state.dynLrcCache.key !== dynamicKey) {
+        state.dynLrcCache.key = dynamicKey;
+        state.dynLrcCache.wordWidths = new Array(l);
+        state.dynLrcCache.cumulativeWidths = new Array(l + 1);
+        state.dynLrcCache.cumulativeWidths[0] = 0;
+        let total = 0;
+        for (let i = 0; i < l; i++) {
+          const w = state.cC.measureText(lyrics.M[0][i].word).width;
+          state.dynLrcCache.wordWidths[i] = w;
+          total += w;
+          state.dynLrcCache.cumulativeWidths[i + 1] = total;
+        }
+        state.dynLrcCache.totalWidth = total;
+        let canvasWidth = Math.ceil(total + o30),
+          canvasHeight = Math.ceil(lrcFS * 1.5);
+        state.dynLrcCanvas = cE("canvas");
+        state.dynLrcCanvas.width = canvasWidth;
+        state.dynLrcCanvas.height = canvasHeight;
+        state.dynLrcPlayedCanvas = cE("canvas");
+        state.dynLrcPlayedCanvas.width = canvasWidth;
+        state.dynLrcPlayedCanvas.height = canvasHeight;
+        let dynamicContext = state.dynLrcCanvas.getContext("2d"),
+          playedContext = state.dynLrcPlayedCanvas.getContext("2d");
+        dynamicContext.font = dynamicFont;
+        dynamicContext.fillStyle = state.color.textT42;
+        dynamicContext.textBaseline = "alphabetic";
+        dynamicContext.fillText(lyricDO, 0, lrcFS);
+        playedContext.font = dynamicFont;
+        playedContext.fillStyle = state.color.text;
+        playedContext.textBaseline = "alphabetic";
+        playedContext.fillText(lyricDO, 0, lrcFS);
+      }
+      let currentTime = state.playProgress + offset,
+        left = 0,
+        right = l;
+      while (left < right) {
+        let middle = Math.floor((left + right) / 2),
+          word = lyrics.M[0][middle];
+        if (currentTime < word.time + word.duration) {
+          right = middle;
+        } else {
+          left = middle + 1;
+        }
+      }
+      if (left > 0) {
+        nowWidth = state.dynLrcCache.cumulativeWidths[left];
+      }
+      if (left < l) {
+        let word = lyrics.M[0][left],
+          Cnow = (currentTime - word.time) / word.duration;
+        Cnow = word.time > currentTime ? 0 : Cnow > 1 ? 1 : Cnow;
+        nowWidth += state.dynLrcCache.wordWidths[left] * Cnow;
+      }
+      let w = state.dynLrcCache.totalWidth;
+      now = w ? nowWidth / w : 0;
+      updateMLrcMgL(w, now);
+      state.cC.drawImage(state.dynLrcCanvas, mLrcMgL, lrcLine[0] - lrcFS); /*主歌词(未播放)*/
+      state.cC.save();
+      state.cC.beginPath();
+      state.cC.rect(0, 0, w * now + mLrcMgL, state.c.height);
+      state.cC.clip();
+      state.cC.drawImage(state.dynLrcPlayedCanvas, mLrcMgL, lrcLine[0] - lrcFS); /*主歌词(已播放)*/
+      state.cC.restore();
+    } else if (state.readCfg.lyricsFrom != "OriginalLyricBar") {
+      lyricStyle();
+      updateMLrcMgL(state.cC.measureText(lyrics.M[0]).width);
+      state.cC.fillText(lyrics.M[0], mLrcMgL, lrcLine[0]); /*主歌词*/
+    } else {
+      lyricStyle();
+      state.cC.fillText(lyrics.M[0], lrcMgL, lrcLine[0]); /*主歌词*/
+    }
+
+    if (lyrics.T[0] != "") {
+      lyricStyle(0, true);
+      if (state.readCfg.lyricsFrom != "OriginalLyricBar") {
+        mLrcMgL = lrcMgL;
+        updateMLrcMgL(state.cC.measureText(lyrics.T[0]).width);
+      }
+      state.cC.fillText(lyrics.T[0], mLrcMgL, lrcLine[1] - o10); /*歌词翻译*/
+      lyricStyle(1);
+      state.cC.fillText(lyrics.M[1], lrcMgL, lrcLine[2]); /*下1句主歌词*/
+      if (lyrics.T[1] != "") {
+        lyricStyle(1, true);
+        state.cC.fillText(lyrics.T[1], lrcMgL, lrcLine[3] - o10); /*下1句歌词翻译*/
+        lyricStyle(2);
+        state.cC.fillText(lyrics.M[2], lrcMgL, lrcLine[4]); /*下2句主歌词*/
+      } else {
+        lyricStyle(2);
+        state.cC.fillText(lyrics.M[2], lrcMgL, lrcLine[3]); /*下2句主歌词*/
+        if (lyrics.T[2] != "") {
+          lyricStyle(2, true);
+          state.cC.fillText(lyrics.T[2], lrcMgL, lrcLine[4] - o10); /*下2句歌词翻译*/
+        } else {
+          lyricStyle(3);
+          state.cC.fillText(lyrics.M[3], lrcMgL, lrcLine[4]); /*下3句主歌词*/
+        }
+      }
+    } else {
+      lyricStyle(1);
+      state.cC.fillText(lyrics.M[1], lrcMgL, lrcLine[1]); /*下1句主歌词*/
+      if (lyrics.T[1] != "") {
+        lyricStyle(1, true);
+        state.cC.fillText(lyrics.T[1], lrcMgL, lrcLine[2] - o10); /*下1句歌词翻译*/
+        lyricStyle(2);
+        state.cC.fillText(lyrics.M[2], lrcMgL, lrcLine[3]); /*下2句主歌词*/
+        if (lyrics.T[2] != "") {
+          lyricStyle(2, true);
+          state.cC.fillText(lyrics.T[2], lrcMgL, lrcLine[4] - o10); /*下2句歌词翻译*/
+        } else {
+          lyricStyle(3);
+          state.cC.fillText(lyrics.M[3], lrcMgL, lrcLine[4]); /*下3句主歌词*/
+        }
+      } else {
+        lyricStyle(2);
+        state.cC.fillText(lyrics.M[2], lrcMgL, lrcLine[2]); /*下2句主歌词*/
+        if (lyrics.T[2] != "") {
+          lyricStyle(2, true);
+          state.cC.fillText(lyrics.T[2], lrcMgL, lrcLine[3] - o10); /*下2句歌词翻译*/
+          lyricStyle(3);
+          state.cC.fillText(lyrics.M[3], lrcMgL, lrcLine[4]); /*下3句主歌词*/
+        } else {
+          lyricStyle(3);
+          state.cC.fillText(lyrics.M[3], lrcMgL, lrcLine[3]); /*下3句主歌词*/
+          if (lyrics.T[3] != "") {
+            lyricStyle(3, true);
+            state.cC.fillText(lyrics.T[3], lrcMgL, lrcLine[4] - o10); /*下3句歌词翻译*/
+          } else {
+            lyricStyle(4);
+            state.cC.fillText(lyrics.M[4], lrcMgL, lrcLine[4]); /*下4句主歌词*/
+          }
+        }
+      }
+    }
+
+    if (state.readCfg.lyricsMask) {
+      let lrcMask = state.cC.createLinearGradient(0, lrcTop, 0, state.c.height * 1.3);
+      lrcMask.addColorStop(0.1, state.color.bgT00); //不能用#0000或者#FFF0等，会影响渐变的渲染效果
+      lrcMask.addColorStop(1, state.color.bg);
+      state.cC.fillStyle = lrcMask;
+      state.cC.fillRect(0, lrcTop, state.c.width, state.c.height); /*歌词阴影遮罩*/
+    }
+
+    state.cC.font = `${gFW} ${o30}px ${f}`;
+    state.cC.fillStyle = state.color.textT56;
+    let tW = state.cC.measureText(state.t).width;
+    state.cC.fillText(state.t, o15, cvSizeY + o35); /*时间*/
+
+    let pbMgT = cvSizeY + o21p5,
+      pbMgL = tW + o30p5;
+    state.cC.fillStyle = state.color.textT13;
+    state.cC.fillRect(pbMgL, pbMgT, state.c.width - pbMgL, o5); /*进度条背景*/
+    state.cC.fillStyle = state.color.accent;
+    state.cC.fillRect(pbMgL, pbMgT, (state.c.width - pbMgL) * state.tP, o5); /*进度条*/
+
+    /*背景*/
+    if (state.readCfg.backgroundFrom == "AMLL" && loadedPlugins["Apple-Musiclike-lyrics"]) {
+      let amllbgc = q(".amll-background-render-wrapper canvas");
+      if (amllbgc) {
+        if (!state.amllbgv) {
+          state.amllbgv = cE("video");
+          state.amllbgv.srcObject = amllbgc.captureStream();
+          state.amllbgv.controls = true; //调试用
+          state.amllbgv.muted = true;
+          state.amllbgv.playsInline = true;
+          state.amllbgv.play();
+        }
+        state.bgcC.drawImage(state.amllbgv, 0, y, state.bgc.width, state.bgc.height - y, 0, y, state.bgc.width, state.bgc.height - y);
+      } else {
+        let amllbgE = q("#amll-view > :first-child:not(.lyric-player-horizonal)"),
+          amllbg;
+        amllbgE ? "" : (amllbgE = q("#amll-view"));
+        amllbgE ? (amllbg = getComputedStyle(amllbgE).getPropertyValue("background-color")) : (amllbg = state.color.bg);
+        state.bgcC.fillStyle = amllbg;
+        state.bgcC.fillRect(0, y, state.bgc.width, state.bgc.height - y);
+      }
+      drawInfo();
+      drawRC();
+    } else {
+      try {
+        state.amllbgv.pause();
+      } catch {}
+    }
+    if (state.readCfg.backgroundFrom == "themeBackgroundColor") {
+      state.bgcC.filter = "none";
+      state.bgcC.fillStyle = state.color.bg;
+      state.bgcC.fillRect(0, y, state.bgc.width, state.bgc.height - y);
+    }
+    state.cC.globalCompositeOperation = "destination-over";
+    y = cvSizeY + o3;
+    state.cC.drawImage(state.bgc, 0, y, state.bgc.width, state.bgc.height - y, 0, y, state.c.width, state.c.height - y);
+    state.cC.globalCompositeOperation = "source-over";
+
+    function drawRC() {
+      state.cC.globalCompositeOperation = "destination-out";
+      state.cC.beginPath();
+      state.cC.strokeStyle = "#000";
+      state.cC.lineWidth = o5;
+      x = cvSizeX + o2;
+      y = cvSizeY + o2;
+      /*封面圆角*/
+      state.cC.moveTo(x, 0);
+      state.cC.arcTo(x, y, 0, y, o12);
+      state.cC.lineTo(0, y);
+      state.cC.lineTo(x, y);
+      state.cC.lineTo(x, 0);
+      state.cC.stroke();
+      state.cC.globalCompositeOperation = "destination-over";
+      state.cC.drawImage(state.bgc, 0, 0, x + o3, y + o3, 0, 0, x + o3, y + o3);
+      state.cC.globalCompositeOperation = "source-over";
+    }
+    function drawInfo() {
+      /*if (readCfg.showIconBarBeforeInfo) {...}*/
+      state.cC.drawImage(state.bgc, cvSizeX, 0, state.c.width, cvSizeY + o5, cvSizeX, 0, state.c.width, cvSizeY + o5); /*清除*/
+      state.cC.fillStyle = state.color.text;
+      state.cC.font = `${gFW} ${o55}px ${f}`;
+      state.cC.fillText(state.song.name, txtMgL, o60); /*主名*/
+      state.cC.fillStyle = state.color.textT31;
+      state.cC.font = `${gFW} ${o35}px ${f}`;
+      state.cC.fillText(state.song.nameAnother, txtMgL, o105); /*副名*/
+      state.cC.fillStyle = state.color.textT56;
+      state.cC.fillText(state.song.artist, txtMgL, state.song.nameAnother == "" ? o105 : o150); /*歌手*/
+    }
+    if (nrInfo) {
+      state.cC.fillStyle = state.color.text;
+      state.cC.font = `${gFW} ${o25}px ${f}`;
+      state.cC.fillText(ldTxt, o5, o30); /*封面(加载)*/
+      state.cover.onload = () => {
+        /*封面(完毕)*/
+        let isCoverEmpty = !state.cvUrl || state.cover.src == DcvUrl;
+        isCoverEmpty ? (cvSizeX = o5) : void 0;
+        if (!isCoverEmpty && state.readCfg.allowNonsquareCover) {
+          cvSizeX = state.cover.width * (cvSizeY / state.cover.height);
+        }
+        txtMgL = cvSizeX + o10;
+        state.readCfg.colorFrom == "albumCover" ? colorPick(state.cover ? state.cover : null) : colorPick();
+        /*背景图*/
+        if (state.readCfg.backgroundFrom == "albumCoverBlur") {
+          state.bgcC.fillStyle = state.color.bg;
+          state.bgcC.fillRect(0, 0, state.bgc.width, state.bgc.height);
+          state.bgcC.filter = `blur(${o60}px)`;
+          state.bgcC.drawImage(state.cover, 0, 0, state.bgc.width, state.bgc.height);
+          state.bgcC.filter = "none";
+          state.bgcC.fillStyle = state.color.bgT50;
+          state.bgcC.fillRect(0, 0, state.bgc.width, state.bgc.height);
+        }
+        state.cC.fillStyle = state.color.bg;
+        state.cC.drawImage(state.bgc, 0, 0, cvSizeX, cvSizeY + o5, 0, 0, cvSizeX, cvSizeY + o5);
+        drawInfo();
+        if (!isCoverEmpty) {
+          state.cC.drawImage(state.cover, 0, 0, cvSizeX, cvSizeY);
+          drawRC();
+          if (state.showRefreshing) {
+            console.log(`PiPW Log: 歌曲封面绘制完成`);
+          }
+        } else if (state.readCfg.showDiscWhenNoCover) {
+          let disc = new Image();
+          disc.src = discUrl;
+          disc.onload = () => {
+            state.cC.drawImage(disc, 0, 0, cvSizeX, cvSizeY);
+            drawRC();
+            if (state.showRefreshing) {
+              console.log(`PiPW Log: 唱片绘制完成`);
+            }
+            disc = null; //处理
+          };
+        }
+        loadPiP(); //解决首次打开黑窗问题(及其他小问题)的关键
+      };
+      state.cover.onerror = () => {
+        /*封面(失败)*/
+        state.cover.src = state.OcvUrl ? state.OcvUrl : DcvUrl;
+        loadPiP();
+      };
+    }
+
+    if (isToPiP && !PiPE) {
+      state.c.toPiP();
+      nrHead = true;
+    }
+  } catch (e) {
+    console.error("PiPW Error: <canvas>绘制出错，详情：\n", e);
+    tipMsg("&lt;canvas&gt;绘制出错，详见JavaScript控制台", "err");
+  }
+}

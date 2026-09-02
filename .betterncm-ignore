@@ -1,2 +1,9 @@
 /README.md
 /preview.png
+/src
+/package.json
+/package-lock.json
+/webpack.config.js
+/.babelrc
+/.gitignore
+/deploy.ps1

@@ -59,11 +59,25 @@ async function tipMsg(m, t) {
         q(c+".z-hide").addEventListener("animationend", ()=>{q(c).remove()})
     }, 1200)
 }
+function getDpr() {
+    let dpr = window.devicePixelRatio || 1;
+    if (dpr === 1) {
+        try {
+            for (const candidate of [1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4]) {
+                if (window.matchMedia(`(resolution: ${candidate}dppx)`).matches) {
+                    dpr = candidate;
+                    break;
+                }
+            }
+        } catch {}
+    }
+    return dpr;
+}
 function reRatio(rv) {
-    function r() {autoRatioValue=rvN; lastReRatio=Date.now()}
-    if (autoRatio) { let l = lastReRatio+1000, n = Date.now(); rvN=rv
-        if (l<=n) {lastReRatio=Date.now();reRatio(rv)}
-        else if (!reRatioPending){reRatioPending=true;setTimeout(()=>{r();reRatioPending=false}, l-n)}
+    if (autoRatio) {
+        rvN = rv;
+        autoRatioValue = Math.round(rv * getDpr());
+        lastReRatio = Date.now();
     }
 }
 
@@ -74,7 +88,7 @@ HTMLCanvasElement.prototype.toPiP = function(){
             try {
                 //请求小窗
                 v.requestPictureInPicture().then(p=>{
-                    thePiPWindow=p;reRatio(p.height);p.addEventListener("resize", e=>{reRatio(e.target.height)});//自适应分辨率
+                    thePiPWindow=p;reRatio(p.height);loadPiP(false, "PiP-created");p.addEventListener("resize", e=>{reRatio(e.target.height);loadPiP(false, "PiP-resize")});//自适应分辨率
                     taskbarButton(readCfg.showTaskbarButton);//任务栏按钮
                 })
                 let pS = ".m-player:not(.f-dn)"
@@ -128,9 +142,13 @@ HTMLCanvasElement.prototype.toPiP = function(){
         })
     }
     v.id = "PiPW-VideoE";
-    let cs = this.captureStream();
+    let cs = this.captureStream(30);
+    let track = cs.getVideoTracks()[0];
+    if (track) {track.contentHint = "motion"}
     v.srcObject = cs; //刷新源
-    v.controls = true; //调试用
+    v.controls = debugMode;
+    v.muted = true;
+    v.playsInline = true;
     if(debugMode){DEBUG()}
     DontPlay=true; //解决打开小窗时自动播放的问题
     v.play() //否则黑窗
@@ -228,7 +246,7 @@ async function loadPiP(isToPiP=true, from="unknow") {
         , ldTxt = readCfg.customLoadingTxt;
         /*分辨率*/
         let r = readCfg.resolutionRatio
-        if (r=="auto") {autoRatio=true; r=autoRatioValue} else {autoRatio=false; r=r*1}
+        if (r=="auto") {autoRatio=true; r=thePiPWindow?Math.round(thePiPWindow.height*getDpr()):autoRatioValue; autoRatioValue=r} else {autoRatio=false; r=r*1}
 
         let pS = betterncm.ncm.getPlayingSong(), data;
         if (pS) {
@@ -805,10 +823,8 @@ async function loadPiP(isToPiP=true, from="unknow") {
 plugin.onAllPluginsLoaded(()=>{load()});
 function load() {B();C();D();E();F()
     legacyNativeCmder.appendRegisterCall("PlayProgress", "audioplayer", (_, p) => {
-        playProgress = p*1000; let pZ = Math.floor(p), needLoadPiP = false;
-        if (pZ>tC||p<tC||readCfg.smoothProgessBar) {tC = p; needLoadPiP = true}
-        if (isDynamicLyrics || readCfg.autoScroll || (readCfg.backgroundFrom=="AMLL" && loadedPlugins["Apple-Musiclike-lyrics"])) {needLoadPiP = true}
-        if (needLoadPiP) {loadPiP(false, "PlayProgress")}
+        playProgress = p*1000; let pZ = Math.floor(p);
+        if (pZ>tC||p<tC||readCfg.smoothProgessBar) {tC = p}
     }); //requestAnimationFrame或setInterval会在网易云最小化后被优化，导致1FPS的感人帧率
     async function B() { //监听自带词栏变动
         await betterncm.utils.waitForElement(".m-lyric");
