@@ -6,6 +6,46 @@ import { state, DcvUrl, discUrl, pO, pC } from "./state.js";
 import { cE, q, qAll, cn2jp, DEBUG, taskbarButton, tipMsg, reRatio, getDpr } from "./utils.js";
 import { colorPick } from "./color.js";
 
+/** 使用原 Canvas 的比例参数，为 DOM 窗口提供同一套布局数据。 */
+export function getSharedLayout(width, height) {
+  let aspect = state.readCfg.aspectRatio.split(":").map(Number),
+    ratio = aspect[0] / aspect[1],
+    scale = Math.min(width / (408 * ratio / 2), height / 204),
+    baseHeight = height / Math.max(scale, 0.1),
+    cvSizeY = baseHeight / 3,
+    o10 = baseHeight / 48,
+    o15 = baseHeight / 32,
+    o35 = baseHeight / 13.7143,
+    o55 = baseHeight / 8.7272,
+    o105 = baseHeight / 4.57143,
+    o150 = baseHeight / 3.2,
+    lrcFS = o55,
+    lrcTop = cvSizeY + baseHeight / 10.6667;
+  return {
+    scale,
+    width: baseHeight * ratio,
+    height: baseHeight,
+    cover: cvSizeY,
+    infoLeft: cvSizeY + o10,
+    titleSize: o55,
+    subtitleSize: baseHeight / 13.7143,
+    artistSize: baseHeight / 16,
+    titleTop: baseHeight / 8,
+    subtitleTop: o105,
+    artistTop: o150,
+    lyricStart: lrcTop + lrcFS,
+    lyricSize: lrcFS,
+    nextLyricSize: lrcFS - o10,
+    lyricGap: o10,
+    translationSize: lrcFS - baseHeight / 24,
+    padding: o15,
+    paddingTop: baseHeight / 48,
+    gap: o10,
+    timeSize: baseHeight / 40,
+    progressSize: baseHeight / 240,
+  };
+}
+
 /**
  * 核心渲染模块：负责把歌曲信息、歌词、封面等绘制到 canvas，
  * 并通过 Picture-in-Picture 显示为小窗。
@@ -249,9 +289,194 @@ export function loadPiP(isToPiP = true, from = "unknow") {
   });
 }
 
+/** 把与 Canvas 相同的已解析内容同步给 DOM 小窗。 */
+function syncDomLyrics(currentProgress) {
+  if (!Array.isArray(state.pLrc) || !state.pLrc.length) {
+    return;
+  }
+  let keys = state.pLrcKeys || Object.keys(state.pLrc),
+    position = currentProgress + state.readCfg.lyricsOffset * 1000,
+    left = 0,
+    right = keys.length;
+  while (left < right) {
+    let middle = Math.floor((left + right) / 2),
+      line = state.pLrc[middle],
+      duration = line.duration || 0;
+    if (position < line.time + duration && position >= line.time) {
+      left = middle;
+      break;
+    }
+    if (position < line.time) {
+      right = middle;
+    } else {
+      left = middle + 1;
+    }
+  }
+  let lineIndex = Math.min(left, keys.length - 1),
+    currentLine = state.pLrc[lineIndex],
+    main = currentLine.dynamicLyric && state.readCfg.dynamicLyrics ? currentLine.dynamicLyric : currentLine.originalLyric,
+    translations = [];
+  for (let i = 0; i < 5; i++) {
+    let item = state.pLrc[lineIndex + i];
+    translations.push({
+      main: item ? (item.dynamicLyric && i === 0 && state.readCfg.dynamicLyrics ? item.dynamicLyric : item.originalLyric) || "" : "",
+      translation: item ? item.translatedLyric || "" : "",
+    });
+  }
+  if (state.readCfg.lyricLine2Show === "none") {
+    for (let item of translations) item.translation = "";
+  } else if (state.readCfg.lyricLine2Show === "latinization") {
+    for (let i = 0; i < translations.length; i++) translations[i].translation = state.pLrc[lineIndex + i]?.romanLyric || "";
+  }
+  let lyricKey = `${lineIndex}:${Array.isArray(main) ? main.map((word) => word.word).join("") : main}`;
+  if (state.domView.lyricKey !== lyricKey) {
+    state.domView.lyricKey = lyricKey;
+    state.domView.lines = translations;
+    state.domView.dynamicWords = Array.isArray(main) ? main : null;
+    state.domView.dynamicTime = currentLine.dynamicLyricTime || currentLine.time;
+    state.domView.dynamicDuration = currentLine.duration;
+    state.domViewRevision++;
+  }
+}
+
+export function renderDomWindow() {
+  let domWindow = state.domWindow;
+  if (!domWindow || domWindow.closed) {
+    return;
+  }
+  let doc = domWindow.document;
+  let layout = getSharedLayout(doc.documentElement.clientWidth, doc.documentElement.clientHeight);
+  let view = state.domView;
+  let isPlaying = view.isPlaying;
+  let currentProgress = state.playProgress;
+  let hasAudioTime = false;
+  let audioPlayer = loadedPlugins.LibFrontendPlay?.currentAudioPlayer;
+  if (audioPlayer && Number.isFinite(audioPlayer.currentTime)) {
+    currentProgress = audioPlayer.currentTime * 1000;
+    isPlaying = !audioPlayer.paused;
+    hasAudioTime = true;
+  }
+  if (!hasAudioTime && isPlaying && state.playProgressTimestamp) {
+    currentProgress += Math.max(0, performance.now() - state.playProgressTimestamp);
+  }
+  syncDomLyrics(currentProgress);
+  let duration = state.tT || view.duration;
+  let currentRatio = duration > 0 ? currentProgress / 1000 / duration : view.progress;
+  let currentSeconds = Math.max(0, currentProgress / 1000),
+    totalSeconds = Math.max(0, duration),
+    currentMinutes = Math.floor(currentSeconds / 60),
+    currentSecondPart = Math.floor(currentSeconds % 60),
+    totalMinutes = Math.floor(totalSeconds / 60),
+    totalSecondPart = Math.floor(totalSeconds % 60),
+    currentText = `${currentMinutes}:${currentSecondPart < 10 ? "0" : ""}${currentSecondPart}`,
+    totalText = `${totalMinutes}:${totalSecondPart < 10 ? "0" : ""}${totalSecondPart}`,
+    remainingSeconds = Math.max(0, totalSeconds - currentSeconds),
+    remainingMinutes = Math.floor(remainingSeconds / 60),
+    remainingSecondPart = Math.floor(remainingSeconds % 60),
+    remainingText = `-${remainingMinutes}:${remainingSecondPart < 10 ? "0" : ""}${remainingSecondPart}`,
+    displayTime = state.readCfg.timeInfo === "CurrentRemaining" ? `${currentText} / ${remainingText}` : `${currentText} / ${totalText}`;
+  let viewChanged = state.domRenderedRevision !== state.domViewRevision;
+  let cover = q(".dom-cover", doc),
+    background = q(".dom-background", doc),
+    title = q(".dom-title", doc),
+    subtitle = q(".dom-subtitle", doc),
+    artist = q(".dom-artist", doc),
+    time = q(".dom-time", doc),
+    progress = q(".dom-progress-value", doc),
+    lyrics = qAll(".dom-lyric", doc);
+  if (!cover || !title) {
+    return;
+  }
+  progress.style.transform = `scaleX(${Math.max(0, Math.min(1, currentRatio))})`;
+  for (let [key, value] of Object.entries(layout)) {
+    doc.documentElement.style.setProperty(`--dom-${key}`, key === "scale" ? value : `${value}px`);
+  }
+  if (time.textContent !== displayTime) {
+    time.textContent = displayTime;
+  }
+  if (viewChanged) {
+    if (cover.src !== view.coverUrl && view.coverUrl) {
+      cover.src = view.coverUrl;
+    }
+    if (background && background.src !== view.coverUrl && view.coverUrl) {
+      background.src = view.coverUrl;
+    }
+    if (background) {
+      background.hidden = state.readCfg.backgroundFrom !== "albumCoverBlur";
+    }
+    title.textContent = view.title;
+    subtitle.textContent = view.subtitle;
+    artist.textContent = view.artist;
+    doc.body.style.background = view.background || "#202124";
+    doc.body.style.color = view.textColor || "#ffffff";
+    doc.documentElement.style.setProperty("--dom-accent", view.accent || "#70d6ff");
+    for (let i = 0; i < lyrics.length; i++) {
+      let line = view.lines[i] || { main: "", translation: "" };
+      lyrics[i].querySelector(".dom-main").textContent = line.main;
+      lyrics[i].querySelector(".dom-translation").textContent = line.translation;
+      lyrics[i].classList.toggle("is-current", i === 0);
+      prepareDomScroll(lyrics[i].querySelector(".dom-main"));
+      prepareDomScroll(lyrics[i].querySelector(".dom-translation"));
+    }
+  }
+  let dynamic = q(".dom-dynamic", doc);
+  if (dynamic) {
+    if (viewChanged && Array.isArray(view.dynamicWords)) {
+      let dynamicKey = view.dynamicWords.map((word) => `${word.time}:${word.duration}:${word.word}`).join("|");
+      dynamic.textContent = "";
+      for (let word of view.dynamicWords) {
+        let wordContainer = doc.createElement("span"),
+          base = doc.createElement("span"),
+          played = doc.createElement("span");
+        wordContainer.className = "dom-word";
+        base.textContent = word.word;
+        played.textContent = word.word;
+        played.className = "dom-word-played";
+        wordContainer.append(base, played);
+        dynamic.appendChild(wordContainer);
+      }
+      state.domDynamicKey = dynamicKey;
+      prepareDomScroll(dynamic);
+    }
+    if (Array.isArray(view.dynamicWords)) {
+      let wordElements = qAll(".dom-word-played", dynamic);
+      for (let i = 0; i < wordElements.length; i++) {
+        let word = view.dynamicWords[i],
+          wordProgress = word.duration > 0 ? (currentProgress - word.time) / word.duration : currentProgress >= word.time ? 1 : 0,
+          right = `${Math.max(0, Math.min(1, 1 - wordProgress)) * 100}%`;
+        wordElements[i].style.clipPath = `inset(0 ${right} 0 0)`;
+      }
+      dynamic.hidden = false;
+      if (lyrics[0]) {
+        lyrics[0].hidden = false;
+        lyrics[0].querySelector(".dom-main").textContent = "";
+        prepareDomScroll(lyrics[0].querySelector(".dom-translation"));
+      }
+    } else {
+      dynamic.hidden = true;
+      if (lyrics[0]) {
+        lyrics[0].hidden = false;
+      }
+    }
+  }
+  state.domRenderedRevision = state.domViewRevision;
+
+  function prepareDomScroll(element) {
+    if (!element) return;
+    element.classList.remove("dom-scroll");
+    element.style.removeProperty("--dom-scroll-distance");
+    if (element.scrollWidth > element.clientWidth) {
+      element.style.setProperty("--dom-scroll-distance", `${element.clientWidth - element.scrollWidth}px`);
+      element.style.setProperty("--dom-scroll-duration", `${Math.max(4, element.scrollWidth / 35)}s`);
+      element.classList.add("dom-scroll");
+    }
+  }
+}
+
 async function loadPiPImpl(isToPiP = true, from = "unknow") {
   let PiPE = document.pictureInPictureElement;
-  if (!isToPiP && !PiPE && !state.debugMode) {
+  let domOnly = !isToPiP && !PiPE && state.domWindow;
+  if (!isToPiP && !PiPE && !state.debugMode && !state.domWindow) {
     return;
   }
   if (PiPE && PiPE.id != "PiPW-VideoE") {
@@ -279,6 +504,9 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
 
     let pS = betterncm.ncm.getPlayingSong(),
       data;
+    if (!pS || !pS.data) {
+      return;
+    }
     if (pS) {
       data = pS.data;
       if (data.track && state.readCfg.useCloudDataForLocalFile) {
@@ -561,6 +789,7 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
           handleLyrics();
           console.log("PiPW Log: ParsedLyrics", state.pLrc);
           state.lrcNowLoading = false;
+          renderDomWindow();
         }
         lrcUpdate();
       } catch (e) {
@@ -603,6 +832,7 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
               handleLyrics();
               console.log("PiPW Log: ParsedLyrics", state.pLrc);
               state.lrcNowLoading = false;
+              renderDomWindow();
             })
             .catch((e) => {
               getLrcErr(e);
@@ -731,6 +961,23 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
         }
       }
     }
+
+    state.domView.coverUrl = state.cvUrl || state.OcvUrl || "";
+    state.domView.title = state.song.name;
+    state.domView.subtitle = state.song.nameAnother;
+    state.domView.artist = state.song.artist;
+    state.domView.time = state.t;
+    state.domView.progress = state.tP;
+    state.domView.duration = state.tT;
+    state.domView.isPlaying = !!pS?.state;
+    state.domView.lines = Array.from({ length: 5 }, (_, i) => ({ main: lyrics.M[i] || "", translation: lyrics.T[i] || "" }));
+    state.domView.dynamicWords = Array.isArray(lyrics.M[0]) ? lyrics.M[0] : null;
+    state.domView.dynamicTime = lyrics.currentT;
+    state.domView.dynamicDuration = lyrics.currentD;
+    state.domView.background = state.color.bg;
+    state.domView.textColor = state.color.text;
+    state.domView.accent = state.color.accent;
+    state.domViewRevision++;
 
     /*取色环节*/
     chigai ? (state.readCfg.colorFrom == "albumCover" ? colorPick(state.cover ? state.cover : null) : colorPick()) : "";
@@ -1181,12 +1428,16 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
             disc = null; //处理
           };
         }
-        loadPiP(); //解决首次打开黑窗问题(及其他小问题)的关键
+        if (!domOnly) {
+          loadPiP(); //解决首次打开黑窗问题(及其他小问题)的关键
+        }
       };
       state.cover.onerror = () => {
         /*封面(失败)*/
         state.cover.src = state.OcvUrl ? state.OcvUrl : DcvUrl;
-        loadPiP();
+        if (!domOnly) {
+          loadPiP();
+        }
       };
     }
 

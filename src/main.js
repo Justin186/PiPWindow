@@ -5,8 +5,7 @@
 import { state, pO } from "./state.js";
 import { q, qAll, cE, tipMsg } from "./utils.js";
 import { colorPick } from "./color.js";
-import { loadPiP } from "./render.js";
-import { pipToggle } from "./pip.js";
+import { getSharedLayout, loadPiP, renderDomWindow } from "./render.js";
 import { getSettingsPage } from "./settings.js";
 
 /**
@@ -42,7 +41,11 @@ window.PiPWTestDocumentPiP = async () => {
 };
 
 window.PiPWTestDomWindow = () => {
-  let domWindow = state.domWindow && !state.domWindow.closed ? state.domWindow : window.open("", "PiPW-DomWindow", "popup=yes,width=408,height=204,resizable=yes");
+  if (state.domWindow && !state.domWindow.closed) {
+    state.domWindow.focus();
+    return true;
+  }
+  let domWindow = window.open("", "PiPW-DomWindow", "popup=yes,width=408,height=204,left=-10000,top=-10000,resizable=yes");
   if (!domWindow) {
     console.warn("PiPW DOM Window: CEF 拒绝创建窗口");
     return false;
@@ -50,47 +53,97 @@ window.PiPWTestDomWindow = () => {
   domWindow.document.write(`
   <title>PiPW DOM Window</title>
     <style>
-      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #202124; color: #fff; font: 700 24px sans-serif; }
-      body { display: grid; grid-template-rows: 24px 1fr; }
-      .dragbar { cursor: move; user-select: none; background: #303134; }
-      .content { display: grid; place-items: center; }
-      .line { position: relative; white-space: nowrap; }
-      .played, .base { position: absolute; inset: 0 auto auto 0; overflow: hidden; }
-      .played { width: 42%; color: #70d6ff; }
+      html, body { box-sizing: border-box; margin: 0; width: 100%; height: 100%; overflow: hidden; border: 0; background: #202124; color: #fff; font: 400 12px "Segoe UI", "Microsoft Yahei UI", sans-serif; }
+      body { position: relative; cursor: move; user-select: none; }
+      .dom-background { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .55; filter: blur(18px); transform: scale(1.08); }
+      .dragbar { position: absolute; z-index: 2; inset: 0 0 auto; height: 14px; cursor: move; touch-action: none; }
+      .content { position: relative; z-index: 1; display: grid; grid-template-columns: var(--dom-cover) 1fr; gap: var(--dom-gap); box-sizing: border-box; width: var(--dom-width); height: var(--dom-height); padding: var(--dom-padding); padding-top: var(--dom-padding-top); transform: scale(var(--dom-scale, 1)); transform-origin: top left; }
+      .dom-cover { width: var(--dom-cover); height: var(--dom-cover); object-fit: cover; border-radius: 3px; background: #38393d; }
+      .details { min-width: 0; overflow: hidden; }
+      .dom-title, .dom-subtitle, .dom-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dom-title { font-size: var(--dom-title-size); line-height: 1; font-weight: 400; }
+      .dom-subtitle { margin-top: 3px; color: #b7bbc5; font-size: var(--dom-subtitle-size); line-height: 1; }
+      .dom-artist { margin-top: 3px; color: #858995; font-size: var(--dom-artist-size); line-height: 1; }
+      .dom-time { margin-top: 5px; color: #b7bbc5; font-size: var(--dom-time-size); font-variant-numeric: tabular-nums; }
+      .dom-progress { height: var(--dom-progress-size); margin-top: 3px; background: #555860; }
+      .dom-progress-value { width: 100%; height: 100%; background: #70d6ff; transform: scaleX(0); transform-origin: left center; }
+      .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); bottom: var(--dom-padding); overflow: hidden; line-height: 1.2; }
+      .dom-lyric { margin-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #777b86; font-size: var(--dom-next-lyric-size); }
+      .dom-lyric.is-current { color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; }
+      .dom-translation { margin-top: 2px; color: #8f929a; font-size: var(--dom-translation-size); }
+      .dom-dynamic { margin-bottom: var(--dom-lyric-gap); color: #777b86; white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; }
+      .dom-word { position: relative; display: inline-block; }
+      .dom-word > span { display: block; }
+      .dom-word-played { position: absolute !important; inset: 0 auto auto 0; width: 100%; overflow: hidden; color: var(--dom-accent, #70d6ff); clip-path: inset(0 100% 0 0); will-change: clip-path; }
+      .dom-scroll { animation: dom-scroll-text var(--dom-scroll-duration, 6s) linear infinite alternate; }
+      @keyframes dom-scroll-text { from { transform: translateX(0); } to { transform: translateX(var(--dom-scroll-distance)); } }
+      .resize-handle { position: fixed; z-index: 10; }
+      .resize-n, .resize-s { left: 8px; right: 8px; height: 8px; }
+      .resize-e, .resize-w { top: 8px; bottom: 8px; width: 8px; }
+      .resize-n { top: 0; cursor: ns-resize; }
+      .resize-s { bottom: 0; cursor: ns-resize; }
+      .resize-e { right: 0; cursor: ew-resize; }
+      .resize-w { left: 0; cursor: ew-resize; }
+      .resize-ne, .resize-nw, .resize-se, .resize-sw { width: 8px; height: 8px; }
+      .resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+      .resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+      .resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
+      .resize-sw { left: 0; bottom: 0; cursor: nesw-resize; }
     </style>
-    <div class="dragbar"></div><div class="content"><div class="line"><span class="base">逐字歌词 DOM 测试</span><span class="played">逐字歌词 DOM 测试</span></div></div>
+    <img class="dom-background" alt=""><div class="dragbar"></div><main class="content"><img class="dom-cover" alt=""><section class="details"><div class="dom-title"></div><div class="dom-subtitle"></div><div class="dom-artist"></div><div class="dom-time"></div><div class="dom-progress"><div class="dom-progress-value"></div></div></section><section class="lyrics"><div class="dom-dynamic" hidden></div><div class="dom-lyric"><div class="dom-main"></div><div class="dom-translation"></div></div><div class="dom-lyric"><div class="dom-main"></div><div class="dom-translation"></div></div><div class="dom-lyric"><div class="dom-main"></div><div class="dom-translation"></div></div></section></main>
+    <div class="resize-handle resize-n"></div><div class="resize-handle resize-s"></div><div class="resize-handle resize-e"></div><div class="resize-handle resize-w"></div>
+    <div class="resize-handle resize-ne"></div><div class="resize-handle resize-nw"></div><div class="resize-handle resize-se"></div><div class="resize-handle resize-sw"></div>
   `);
   domWindow.document.close();
   domWindow.document.title = "PiPW DOM Window";
   state.domWindow = domWindow;
+  let resizeDom = () => {
+    let width = domWindow.document.documentElement.clientWidth,
+      height = domWindow.document.documentElement.clientHeight,
+      layout = getSharedLayout(width, height);
+    for (let [key, value] of Object.entries(layout)) {
+      domWindow.document.documentElement.style.setProperty(`--dom-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, key === "scale" ? value : `${value}px`);
+    }
+  };
+  if (domWindow.ResizeObserver) {
+    new domWindow.ResizeObserver(resizeDom).observe(domWindow.document.documentElement);
+  }
+  resizeDom();
+  loadPiP(false, "DomWindow");
+  renderDomWindow();
+  let updateDom = () => {
+    if (!state.domWindow || state.domWindow !== domWindow || domWindow.closed) {
+      return;
+    }
+    renderDomWindow();
+    domWindow.requestAnimationFrame(updateDom);
+  };
+  domWindow.requestAnimationFrame(updateDom);
   domWindow.addEventListener("beforeunload", () => {
     if (state.domWindow === domWindow) {
       state.domWindow = undefined;
     }
   });
-  let dragbar = domWindow.document.querySelector(".dragbar");
-  dragbar.addEventListener("pointerdown", (event) => {
-    let lastX = event.screenX,
-      lastY = event.screenY;
-    let moveWindow = (moveEvent) => {
-      domWindow.moveBy(moveEvent.screenX - lastX, moveEvent.screenY - lastY);
-      lastX = moveEvent.screenX;
-      lastY = moveEvent.screenY;
-    };
-    let stopMoving = () => {
-      dragbar.removeEventListener("pointermove", moveWindow);
-      dragbar.removeEventListener("pointerup", stopMoving);
-      dragbar.releasePointerCapture(event.pointerId);
-    };
-    dragbar.setPointerCapture(event.pointerId);
-    dragbar.addEventListener("pointermove", moveWindow);
-    dragbar.addEventListener("pointerup", stopMoving);
+  domWindow.document.body.addEventListener("mousemove", (event) => {
+    let margin = 8;
+    let right = domWindow.document.documentElement.clientWidth - margin;
+    let bottom = domWindow.document.documentElement.clientHeight - margin;
+    let leftEdge = event.clientX < margin;
+    let rightEdge = event.clientX >= right;
+    let topEdge = event.clientY < margin;
+    let bottomEdge = event.clientY >= bottom;
+    let cursor = "move";
+    if ((leftEdge && topEdge) || (rightEdge && bottomEdge)) cursor = "nwse-resize";
+    else if ((rightEdge && topEdge) || (leftEdge && bottomEdge)) cursor = "nesw-resize";
+    else if (leftEdge || rightEdge) cursor = "ew-resize";
+    else if (topEdge || bottomEdge) cursor = "ns-resize";
+    domWindow.document.body.style.cursor = cursor;
   });
   setTimeout(() => {
     betterncm.app.exec(
-      `PowerShell -NoProfile -ExecutionPolicy Bypass -command "& '${loadedPlugins.PiPWindow.pluginPath}/domWindowStyle.ps1' -title 'PiPW DOM Window'"`
+      `PowerShell -NoProfile -ExecutionPolicy Bypass -command "& '${loadedPlugins.PiPWindow.pluginPath}/domWindowStyle.ps1' -title 'PiPW DOM Window' -watchDrag"`
     );
-  }, 300);
+  }, 0);
   console.log("PiPW DOM Window: 成功创建独立 DOM 窗口", domWindow);
   return true;
 };
@@ -113,11 +166,22 @@ function load() {
   F();
   legacyNativeCmder.appendRegisterCall("PlayProgress", "audioplayer", (_, p) => {
     state.playProgress = p * 1000;
+    state.playProgressTimestamp = performance.now();
+    renderDomWindow();
     let pZ = Math.floor(p);
     if (pZ > state.tC || p < state.tC || state.readCfg.smoothProgessBar) {
       state.tC = p;
     }
   }); //requestAnimationFrame或setInterval会在网易云最小化后被优化，导致1FPS的感人帧率
+  legacyNativeCmder.appendRegisterCall("PlayState", "audioplayer", (_, __, playingState) => {
+    let now = performance.now();
+    if (playingState !== 1 && state.playProgressTimestamp) {
+      state.playProgress += Math.max(0, now - state.playProgressTimestamp);
+    }
+    state.playProgressTimestamp = now;
+    state.domView.isPlaying = playingState === 1;
+    renderDomWindow();
+  });
 
   async function B() {
     //监听自带词栏变动
@@ -176,7 +240,7 @@ function load() {
     state.b.classList.add("icn", "f-cp");
     state.b.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 24px; height: 24px; transform: scale(.75);">${pO}</svg>`;
     state.b.addEventListener("click", () => {
-      pipToggle();
+      window.PiPWTestDomWindow();
     });
     q(".m-pinfo h3").appendChild(state.b);
     new MutationObserver(() => {

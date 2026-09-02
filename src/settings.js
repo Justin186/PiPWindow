@@ -6,7 +6,6 @@ import { state, cfgDefault } from "./state.js";
 import { q, qAll, cE, DEBUG, tipMsg, reRatio } from "./utils.js";
 import { colorPick } from "./color.js";
 import { saveCfg, resetCfg } from "./config.js";
-import { pipToggle } from "./pip.js";
 
 /**
  * 设置页面：生成 BetterNCM 插件设置页的 HTML 并绑定事件。
@@ -987,7 +986,7 @@ export function getSettingsPage() {
     }
   }
   q("#PiPW-ToggleLink", state.cP).addEventListener("click", () => {
-    pipToggle();
+    window.PiPWTestDomWindow();
   });
   q("#resetButton-All", state.cP).addEventListener("click", () => {
     resetCfg();

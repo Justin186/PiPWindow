@@ -18,9 +18,14 @@ PiPWindow 是 BetterNCM 插件，用于显示歌曲信息、封面和歌词小�
 - 传统 Canvas PiP 的延迟和卡顿主要来自 CEF 的 captureStream/PiP 媒体管线，而不是电脑性能或单次 JS 绘制耗时。
 - 同机 `D:\refined-now-playing-netease` 流畅，是因为它主要使用网易云原生 DOM/CSS，而不是 Canvas -> MediaStream -> PiP。
 
-## 当前 DOM 窗口原型
+## 当前 DOM 窗口原型（当前主路线）
 
-控制台命令：
+主要入口：
+
+- 歌曲信息区域旁的 PiP 图标
+- 插件设置页中的打开链接
+
+调试时仍可使用控制台命令：
 
 ```js
 PiPWTestDomWindow()
@@ -29,10 +34,12 @@ PiPWTestDomWindow()
 当前原型特性：
 
 - 使用 DOM/CSS 显示逐字歌词测试文本
-- 创建后调用 `domWindowStyle.ps1`
-- PowerShell 脚本尝试移除标题栏并设置始终置顶
-- 顶部区域支持鼠标拖动
-- 保留窗口缩放能力
+- 窗口先在屏幕外创建，避免显示原生边框到无边框的切换过程
+- 创建后调用 `domWindowStyle.ps1`，应用无边框、置顶并刷新客户区
+- 当前最终尺寸为 `408x204`
+- PowerShell 启动常驻 Win32 鼠标监视器，整个窗口区域都支持拖动
+- 窗口四边和四角支持自定义缩放，命中区约为 `8px`
+- 已有窗口再次点击图标时只聚焦，不重复创建或初始化
 - 网易云主窗口退出时尝试自动关闭 DOM 窗口
 - 脚本执行日志写入：`%TEMP%\\PiPW-domWindowStyle.log`
 
@@ -40,6 +47,8 @@ PiPWTestDomWindow()
 
 - `styled=true`：找到窗口并成功应用 Windows 样式
 - `matched=false`：脚本执行了，但没有匹配到窗口
+- `drag-watcher=true`：常驻 Win32 拖动监视器已启动
+- `resize-start=true`：鼠标按下时命中了窗口边缘缩放区域
 
 当前 DOM 原型还没有接入真实歌曲、封面、歌词和播放状态。
 
@@ -118,9 +127,10 @@ PiPW FPS: 请求23.4次/s，完成23.4帧/s，视频轨道0fps，canvas 612x306�
 ### DOM 窗口原型
 
 - 原型仍然只是测试文字，没有接入真实数据。
-- 标题栏/无边框/置顶依赖 PowerShell 查找窗口标题。
+- 无边框、置顶、拖动和缩放依赖 PowerShell 查找窗口标题及 Win32 API。
 - 需要确认 `%TEMP%\\PiPW-domWindowStyle.log`，判断脚本是否成功匹配窗口。
-- `window.open()` 创建的窗口可能存在关闭、焦点、任务栏图标、拖动和缩放细节问题。
+- 首次创建需要启动 PowerShell 并加载 Win32 类型，存在少量初始化延迟；窗口会在屏幕外等待完成后再显示。
+- 自定义缩放依赖 Win32 光标轮询，缩放命中区约为 `8px`；调整时需同步修改 `domWindowStyle.ps1` 和 `src/main.js`。
 - 主窗口退出自动关闭依赖 `beforeunload`，需要实际验证。
 - DOM 窗口目前没有真实 PiP 的控制按钮和歌曲同步。
 
@@ -128,14 +138,15 @@ PiPW FPS: 请求23.4次/s，完成23.4帧/s，视频轨道0fps，canvas 612x306�
 
 优先继续 DOM 窗口路线，因为它能完全绕过 Canvas/PiP 媒体管线：
 
-1. 验证 `domWindowStyle.ps1` 日志是否为 `styled=true`。
-2. 把 DOM 原型拆成独立窗口渲染器。
-3. 从 `betterncm.ncm.getPlayingSong()` 获取歌曲、封面和时长。
-4. 把歌词解析和当前行定位接入 DOM 窗口。
-5. 用 `<span>` 或逐词元素实现逐字高亮，使用 CSS `clip-path`、宽度或 transform 更新高亮。
-6. 监听 `PlayProgress`，只更新状态；DOM 窗口内部用 `requestAnimationFrame` 更新高亮。
-7. 增加窗口关闭、主程序退出、切歌、暂停、播放和置顶状态同步。
-8. 最后再决定是否保留传统 Canvas PiP 作为兼容模式。
+1. 新建窗口后确认日志包含 `styled=true` 和 `drag-watcher=true`。
+2. 测试边缘缩放时是否出现 `resize-start=true`。
+3. 把 DOM 原型拆成独立窗口渲染器。
+4. 从 `betterncm.ncm.getPlayingSong()` 获取歌曲、封面和时长。
+5. 把歌词解析和当前行定位接入 DOM 窗口。
+6. 用 `<span>` 或逐词元素实现逐字高亮，使用 CSS `clip-path`、宽度或 transform 更新高亮。
+7. 监听 `PlayProgress`，只更新状态；DOM 窗口内部用 `requestAnimationFrame` 更新高亮。
+8. 增加窗口关闭、主程序退出、切歌、暂停、播放和置顶状态同步。
+9. 最后再决定是否保留传统 Canvas PiP 作为兼容模式。
 
 ## 重要实现注意事项
 
