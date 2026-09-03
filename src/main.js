@@ -76,14 +76,14 @@ window.PiPWTestDomWindow = () => {
       .dom-lyric.is-next { color: var(--dom-lyric-next, #fff); }
       .dom-lyric.is-old { animation: dom-lyric-out 0.5s var(--dom-timing) forwards; }
       @keyframes dom-lyric-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0.45; transform: translateY(-6px); } }
+      .dom-main, .dom-translation { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dom-translation { min-height: 1.2em; margin-top: 2px; color: var(--dom-translation-current, #8f929a); font-size: var(--dom-translation-size); font-weight: 700; }
       .dom-lyric.is-next .dom-translation { color: var(--dom-translation-next, #8f929a); }
       .dom-dynamic { color: var(--dom-lyric-unplayed, #777b86); white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; transition: opacity 0.4s ease; }
       .dom-word { position: relative; display: inline-block; }
       .dom-word > span { display: block; white-space: pre; }
       .dom-word-played { position: absolute !important; inset: 0 auto auto 0; width: 100%; overflow: hidden; color: var(--dom-lyric-played, #fff); clip-path: inset(0 100% 0 0); will-change: clip-path; }
-      .dom-scroll { animation: dom-scroll-text var(--dom-scroll-duration, 6s) linear infinite alternate; }
-      @keyframes dom-scroll-text { from { transform: translateX(0); } to { transform: translateX(var(--dom-scroll-distance)); } }
+      .dom-scroll { width: max-content; max-width: none; overflow: visible; text-overflow: clip; transition: transform 100ms linear; will-change: transform; }
       .resize-handle { position: fixed; z-index: 10; }
       .resize-n, .resize-s { left: 8px; right: 8px; height: 8px; }
       .resize-e, .resize-w { top: 8px; bottom: 8px; width: 8px; }

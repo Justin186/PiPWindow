@@ -365,6 +365,7 @@ export function renderDomWindow() {
     currentProgress += Math.max(0, performance.now() - state.playProgressTimestamp);
   }
   syncDomLyrics(currentProgress);
+  let lyricProgress = currentProgress + state.readCfg.lyricsOffset * 1000;
   let duration = state.tT || view.duration;
   let currentRatio = duration > 0 ? currentProgress / 1000 / duration : view.progress;
   let currentSeconds = Math.max(0, currentProgress / 1000),
@@ -427,43 +428,51 @@ export function renderDomWindow() {
   doc.documentElement.style.setProperty("--dom-translation-next", state.color.textT31 || "#8f929a");
   if (lyricChanged && track) {
     let targetIndex = view.lyricIndex,
-      previousIndex = state.domRenderedLyricIndex ?? -1,
-      firstIndex = previousIndex < 0 ? targetIndex : Math.min(previousIndex, targetIndex),
-      lastIndex = previousIndex < 0 ? targetIndex : Math.max(previousIndex, targetIndex);
-    track.style.transition = "none";
-    track.style.transform = "translateY(0)";
-    track.textContent = "";
-    let rows = [];
-    for (let index = firstIndex; index <= lastIndex; index++) {
-      let item = state.pLrc?.[index],
-        row = doc.createElement("div"),
-        main = doc.createElement("div"),
-        translation = doc.createElement("div");
-      row.className = `dom-lyric${index === targetIndex ? "" : " is-next"}${index === previousIndex ? " is-old" : ""}`;
-      main.className = "dom-main";
-      translation.className = "dom-translation";
-      let words = index === targetIndex && Array.isArray(view.dynamicWords) ? view.dynamicWords : item?.dynamicLyric;
-      if (Array.isArray(words)) {
-        let dynamic = doc.createElement("div");
-        dynamic.className = "dom-dynamic";
-        dynamic.dataset.lyricIndex = `${index}`;
-        main.appendChild(dynamic);
-        renderDynamic(dynamic, words);
-      } else {
-        main.textContent = item?.originalLyric || "";
-      }
-      translation.textContent =
-        state.readCfg.lyricLine2Show === "none"
-          ? ""
-          : state.readCfg.lyricLine2Show === "latinization"
-            ? item?.romanLyric || ""
-            : item?.translatedLyric || "";
-      row.append(main, translation);
-      track.appendChild(row);
-      rows.push(row);
+      previousIndex = state.domRenderedLyricIndex ?? -1;
+    // 保留旧行 DOM 不动（scroll 状态天然保留），只重建目标行
+    let oldRow = previousIndex >= 0 ? q(`.dom-lyric[data-lyric-index="${previousIndex}"]`, track) : null;
+    if (oldRow) {
+      oldRow.classList.remove("is-next");
+      oldRow.classList.add("is-old");
+      // 冻结旧行 scroll：换行后不再更新，保持唱完时的位置
+      oldRow.dataset.scrollFrozen = "";
     }
-    let targetRow = rows[targetIndex - firstIndex],
-      oldRow = rows[previousIndex - firstIndex];
+    // 移除旧的目标行（若存在），避免重复
+    let existingTarget = q(`.dom-lyric[data-lyric-index="${targetIndex}"]`, track);
+    if (existingTarget) existingTarget.remove();
+    // 创建目标行
+    let item = state.pLrc?.[targetIndex],
+      row = doc.createElement("div"),
+      main = doc.createElement("div"),
+      translation = doc.createElement("div");
+    row.className = "dom-lyric";
+    row.dataset.lyricIndex = `${targetIndex}`;
+    main.className = "dom-main";
+    translation.className = "dom-translation";
+    let words = Array.isArray(view.dynamicWords) ? view.dynamicWords : item?.dynamicLyric;
+    if (Array.isArray(words)) {
+      let dynamic = doc.createElement("div");
+      dynamic.className = "dom-dynamic";
+      dynamic.dataset.lyricIndex = `${targetIndex}`;
+      main.appendChild(dynamic);
+      renderDynamic(dynamic, words);
+    } else {
+      main.textContent = item?.originalLyric || "";
+    }
+    translation.textContent =
+      state.readCfg.lyricLine2Show === "none"
+        ? ""
+        : state.readCfg.lyricLine2Show === "latinization"
+          ? item?.romanLyric || ""
+          : item?.translatedLyric || "";
+    row.append(main, translation);
+    // 新行插到旧行之后（若旧行存在），否则追加到末尾
+    if (oldRow) {
+      oldRow.after(row);
+    } else {
+      track.appendChild(row);
+    }
+    let targetRow = row;
     if (targetRow) {
       let aspect = state.readCfg.aspectRatio.split(":").map(Number),
         ratio = aspect[0] / aspect[1];
@@ -478,13 +487,13 @@ export function renderDomWindow() {
       doc.documentElement.style.setProperty("--dom-lyric-window-height", `${layout.lyricWindowHeight}px`);
     }
     track.parentElement.style.height = `${layout.lyricWindowHeight}px`;
-    for (let row of rows) {
-      prepareDomScroll(row.querySelector(".dom-main"));
-      prepareDomScroll(row.querySelector(".dom-translation"));
-    }
+    let mainEl = targetRow.querySelector(".dom-main");
+    if (!mainEl.querySelector(".dom-dynamic")) prepareDomScroll(mainEl);
+    prepareDomScroll(targetRow.querySelector(".dom-translation"));
     fitDomWindowHeight(targetRow, layout);
     state.domRenderedLyricKey = view.lyricKey;
     state.domRenderedLyricIndex = targetIndex;
+    let oldRowHeight = oldRow ? oldRow.offsetHeight : 0;
     let initialOffset = oldRow ? -oldRow.offsetTop : 0,
       targetOffset = targetRow ? -targetRow.offsetTop : 0,
       distance = Math.abs(targetOffset - initialOffset),
@@ -493,7 +502,7 @@ export function renderDomWindow() {
     void track.offsetWidth;
     let finish = (event) => {
       if (state.domLyricAnimation !== finish) return;
-      if (event && event.propertyName !== "transform") return;
+      if (event && (event.target !== track || event.propertyName !== "transform")) return;
       let clip = track.parentElement.getBoundingClientRect(),
         finishedRows = qAll(".dom-lyric", track);
       for (let finishedRow of finishedRows) {
@@ -503,6 +512,11 @@ export function renderDomWindow() {
       }
       targetRow.classList.remove("is-old");
       track.style.transition = "none";
+      // 旧行移除后 targetRow.offsetTop 变了，瞬移补偿后归零
+      if (oldRowHeight && targetRow) {
+        track.style.transform = `translateY(${-targetRow.offsetTop - oldRowHeight}px)`;
+        void track.offsetWidth;
+      }
       track.style.transform = "translateY(0)";
       track.removeEventListener("transitionend", finish);
       state.domLyricAnimation = undefined;
@@ -518,9 +532,22 @@ export function renderDomWindow() {
     });
   }
   for (let dynamic of qAll(".dom-dynamic", track)) {
+    let row = dynamic.closest(".dom-lyric");
+    if (row && "scrollFrozen" in row.dataset) continue;
     let lyricIndex = Number(dynamic.dataset.lyricIndex),
       words = state.pLrc?.[lyricIndex]?.dynamicLyric;
     if (Array.isArray(words)) renderDynamic(dynamic, words);
+  }
+  for (let row of qAll(".dom-lyric", track)) {
+    if ("scrollFrozen" in row.dataset) continue;
+    let lyricIndex = Number(row.dataset.lyricIndex),
+      item = state.pLrc?.[lyricIndex],
+      lineDuration = item?.duration || 0,
+      lineProgress = lineDuration > 0 ? (lyricProgress - item.time) / lineDuration : 0;
+    for (let element of qAll(".dom-scroll", row)) {
+      let tw = element.scrollWidth || 0;
+      updateDomScroll(element, tw * Math.max(0, Math.min(1, lineProgress)), tw);
+    }
   }
   state.domRenderedRevision = state.domViewRevision;
 
@@ -542,25 +569,56 @@ export function renderDomWindow() {
         dynamic.appendChild(wordContainer);
       }
     }
-    let wordElements = qAll(".dom-word-played", dynamic);
+    let wordElements = qAll(".dom-word-played", dynamic),
+      wordContainers = qAll(".dom-word", dynamic),
+      playedWidth = 0,
+      totalWidth = 0;
     for (let i = 0; i < wordElements.length; i++) {
       let word = words[i],
-        wordProgress = word.duration > 0 ? (currentProgress - word.time) / word.duration : currentProgress >= word.time ? 1 : 0,
+        wordProgress = word.duration > 0 ? (lyricProgress - word.time) / word.duration : lyricProgress >= word.time ? 1 : 0,
+        clampedProgress = Math.max(0, Math.min(1, wordProgress)),
         right = `${Math.max(0, Math.min(1, 1 - wordProgress)) * 100}%`;
       wordElements[i].style.clipPath = `inset(0 ${right} 0 0)`;
+      totalWidth += wordContainers[i].offsetWidth;
+      playedWidth += wordContainers[i].offsetWidth * clampedProgress;
     }
     prepareDomScroll(dynamic);
   }
 
   function prepareDomScroll(element) {
     if (!element) return;
-    element.classList.remove("dom-scroll");
-    element.style.removeProperty("--dom-scroll-distance");
-    if (element.scrollWidth > element.clientWidth) {
-      element.style.setProperty("--dom-scroll-distance", `${element.clientWidth - element.scrollWidth}px`);
-      element.style.setProperty("--dom-scroll-duration", `${Math.max(4, element.scrollWidth / 35)}s`);
+    if (!state.readCfg.autoScroll) {
+      element.classList.remove("dom-scroll");
+      element.style.removeProperty("--dom-scroll-distance");
+      element.style.removeProperty("--dom-scroll-duration");
+      element.style.removeProperty("transform");
+      return;
+    }
+    if (!element.classList.contains("dom-scroll") && element.scrollWidth > element.clientWidth) {
       element.classList.add("dom-scroll");
     }
+  }
+
+  // 像素空间等速滚动：offset 随 playedWidth 线性变化（速度恒定）。
+  // 触发更早：播放头到达 triggerX 处即开始滚动；
+  // 末尾贴最右：滚动结束时（playedWidth=totalWidth）文本末尾停在 viewport 右缘。
+  function updateDomScroll(element, playedWidth, totalWidth) {
+    if (!element || !element.classList.contains("dom-scroll")) return;
+    let viewportWidth = element.parentElement?.clientWidth || element.clientWidth,
+      scrollPadding = layout.cover / 3.2,
+      triggerRatio = 0.7,
+      triggerX = viewportWidth * triggerRatio,
+      // 触发点：playedWidth 达到 triggerX - scrollPadding 时 offset=0
+      startPlayed = triggerX - scrollPadding,
+      // 终点：playedWidth=totalWidth 时文本末尾贴右
+      endOffset = viewportWidth - totalWidth - scrollPadding,
+      offset = 0;
+    if (playedWidth > startPlayed && totalWidth > startPlayed) {
+      // 线性插值：offset 从 0 线性过渡到 endOffset，速度恒定
+      let t = (playedWidth - startPlayed) / (totalWidth - startPlayed);
+      offset = endOffset * Math.max(0, Math.min(1, t));
+    }
+    element.style.transform = `translateX(${offset}px)`;
   }
 
   function fitDomWindowHeight(row, currentLayout) {
