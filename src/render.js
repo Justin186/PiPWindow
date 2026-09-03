@@ -19,8 +19,9 @@ export function getSharedLayout(width, height) {
     o105 = baseHeight / 4.57143,
     o150 = baseHeight / 3.2,
     lrcFS = o55,
+    translationSize = lrcFS - baseHeight / 30,
     lrcTop = cvSizeY + baseHeight / 10.6667,
-    lyricWindowHeight = state.domLyricWindowHeight || lrcFS * 1.2 + 2 + (lrcFS - baseHeight / 24) * 1.2,
+    lyricWindowHeight = state.domLyricWindowHeight || lrcFS * 1.2 + 2 + translationSize * 1.2 + o10,
     contentHeight = lrcTop + lyricWindowHeight,
     scale = width / (contentHeight * ratio);
   return {
@@ -40,7 +41,7 @@ export function getSharedLayout(width, height) {
     lyricSize: lrcFS,
     nextLyricSize: lrcFS - o10,
     lyricGap: o10,
-    translationSize: lrcFS - baseHeight / 24,
+    translationSize,
     padding: o15,
     paddingTop: baseHeight / 48,
     gap: o10,

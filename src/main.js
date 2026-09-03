@@ -46,7 +46,7 @@ window.PiPWTestDomWindow = () => {
     return true;
   }
   let aspect = state.readCfg.aspectRatio.split(":").map(Number);
-  let domWindow = window.open("", "PiPW-DomWindow", "popup=yes,width=320,height=120,left=-10000,top=-10000,resizable=yes");
+  let domWindow = window.open("", "PiPW-DomWindow", "popup=yes,width=240,height=80,left=-10000,top=-10000,resizable=yes");
   if (!domWindow) {
     console.warn("PiPW DOM Window: CEF 拒绝创建窗口");
     return false;
@@ -71,7 +71,7 @@ window.PiPWTestDomWindow = () => {
       :root { --dom-timing: cubic-bezier(0.45, 0, 0.07, 1); }
       .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); height: var(--dom-lyric-window-height, 2em); overflow: hidden; line-height: 1.2; }
       .lyric-track { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
-      .dom-lyric { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; opacity: 1; }
+      .dom-lyric { box-sizing: border-box; padding-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; opacity: 1; }
       .dom-lyric.is-old { animation: dom-lyric-out 0.5s var(--dom-timing) forwards; }
       @keyframes dom-lyric-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0.45; transform: translateY(-6px); } }
       .dom-translation { min-height: 1.2em; margin-top: 2px; color: #8f929a; font-size: var(--dom-translation-size); font-weight: 700; }
@@ -146,14 +146,15 @@ window.PiPWTestDomWindow = () => {
   });
   setTimeout(() => {
     betterncm.app.exec(
-      `PowerShell -NoProfile -ExecutionPolicy Bypass -command "& '${loadedPlugins.PiPWindow.pluginPath}/domWindowStyle.ps1' -title 'PiPW DOM Window' -watchDrag -aspectWidth ${aspect[0]} -aspectHeight ${aspect[1]} -initialWidth 320 -initialHeight 120"`
+      `PowerShell -NoProfile -ExecutionPolicy Bypass -command "& '${loadedPlugins.PiPWindow.pluginPath}/domWindowStyle.ps1' -title 'PiPW DOM Window' -watchDrag -aspectWidth ${aspect[0]} -aspectHeight ${aspect[1]} -initialWidth ${Math.ceil(120 * aspect[0] / aspect[1])} -initialHeight 120"`
     );
-    setTimeout(() => {
-      if (state.domWindow === domWindow && !domWindow.closed) {
-        state.domRenderedLyricKey = undefined;
-        renderDomWindow();
-      }
-    }, 250);
+    let correctDomWindowSize = () => {
+      if (state.domWindow !== domWindow || domWindow.closed) return;
+      state.domRenderedLyricKey = undefined;
+      renderDomWindow();
+    };
+    setTimeout(correctDomWindowSize, 500);
+    setTimeout(correctDomWindowSize, 1200);
   }, 0);
   console.log("PiPW DOM Window: 成功创建独立 DOM 窗口", domWindow);
   return true;
