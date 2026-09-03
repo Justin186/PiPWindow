@@ -57,7 +57,7 @@ window.PiPWTestDomWindow = () => {
       body { position: relative; cursor: move; user-select: none; }
       .dom-background { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .55; filter: blur(18px); transform: scale(1.08); }
       .dragbar { position: absolute; z-index: 2; inset: 0 0 auto; height: 14px; cursor: move; touch-action: none; }
-      .content { position: relative; z-index: 1; display: grid; grid-template-columns: var(--dom-cover) 1fr; gap: var(--dom-gap); box-sizing: border-box; width: var(--dom-width); height: var(--dom-height); padding: var(--dom-padding); padding-top: var(--dom-padding-top); transform: scale(var(--dom-scale, 1)); transform-origin: top left; }
+      .content { position: relative; z-index: 1; display: grid; grid-template-columns: var(--dom-cover) 1fr; gap: var(--dom-gap); box-sizing: border-box; width: var(--dom-width); height: var(--dom-content-height, var(--dom-height)); padding: var(--dom-padding); padding-top: var(--dom-padding-top); transform: scale(var(--dom-scale, 1)); transform-origin: top left; }
       .dom-cover { width: var(--dom-cover); height: var(--dom-cover); object-fit: cover; border-radius: 3px; background: #38393d; }
       .details { min-width: 0; overflow: hidden; }
       .dom-title, .dom-subtitle, .dom-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -68,15 +68,12 @@ window.PiPWTestDomWindow = () => {
       .dom-progress { height: var(--dom-progress-size); margin-top: 3px; background: #555860; }
       .dom-progress-value { width: 100%; height: 100%; background: #70d6ff; transform: scaleX(0); transform-origin: left center; }
       :root { --dom-timing: cubic-bezier(0.45, 0, 0.07, 1); }
-      .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); bottom: var(--dom-padding); overflow: hidden; line-height: 1.2; }
-      .dom-lyric { margin-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #777b86; font-size: var(--dom-next-lyric-size); transition: opacity 0.5s var(--dom-timing), color 0.5s var(--dom-timing); opacity: 0.45; }
-      .dom-lyric.is-current { color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; opacity: 1; }
-      .dom-lyric-enter { animation: dom-lyric-in 0.5s var(--dom-timing); }
-      @keyframes dom-lyric-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-      .dom-lyric-exit { animation: dom-lyric-out 0.5s var(--dom-timing); }
-      @keyframes dom-lyric-out { from { opacity: 1; } to { opacity: 0.45; } }
-      .dom-translation { margin-top: 2px; color: #8f929a; font-size: var(--dom-translation-size); transition: opacity 0.4s ease; }
-      .dom-lyric:not(.is-current) .dom-translation { opacity: 0.45; }
+      .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); height: var(--dom-lyric-window-height, 2em); overflow: hidden; line-height: 1.2; }
+      .lyric-track { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+      .dom-lyric { margin-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; opacity: 1; }
+      .dom-lyric.is-old { animation: dom-lyric-out 0.5s var(--dom-timing) forwards; }
+      @keyframes dom-lyric-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0.45; transform: translateY(-6px); } }
+      .dom-translation { margin-top: 2px; color: #8f929a; font-size: var(--dom-translation-size); font-weight: 700; }
       .dom-dynamic { margin-bottom: var(--dom-lyric-gap); color: #777b86; white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; transition: opacity 0.4s ease; }
       .dom-word { position: relative; display: inline-block; }
       .dom-word > span { display: block; }
@@ -96,7 +93,7 @@ window.PiPWTestDomWindow = () => {
       .resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
       .resize-sw { left: 0; bottom: 0; cursor: nesw-resize; }
     </style>
-    <img class="dom-background" alt=""><div class="dragbar"></div><main class="content"><img class="dom-cover" alt=""><section class="details"><div class="dom-title"></div><div class="dom-subtitle"></div><div class="dom-artist"></div><div class="dom-time"></div><div class="dom-progress"><div class="dom-progress-value"></div></div></section><section class="lyrics"><div class="dom-dynamic" hidden></div><div class="dom-lyric"><div class="dom-main"></div><div class="dom-translation"></div></div><div class="dom-lyric"><div class="dom-main"></div><div class="dom-translation"></div></div><div class="dom-lyric"><div class="dom-main"></div><div class="dom-translation"></div></div></section></main>
+    <img class="dom-background" alt=""><div class="dragbar"></div><main class="content"><img class="dom-cover" alt=""><section class="details"><div class="dom-title"></div><div class="dom-subtitle"></div><div class="dom-artist"></div><div class="dom-time"></div><div class="dom-progress"><div class="dom-progress-value"></div></div></section><section class="lyrics"><div class="lyric-track"></div></section></main>
     <div class="resize-handle resize-n"></div><div class="resize-handle resize-s"></div><div class="resize-handle resize-e"></div><div class="resize-handle resize-w"></div>
     <div class="resize-handle resize-ne"></div><div class="resize-handle resize-nw"></div><div class="resize-handle resize-se"></div><div class="resize-handle resize-sw"></div>
   `);

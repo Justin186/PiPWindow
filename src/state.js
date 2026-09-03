@@ -122,10 +122,10 @@ export const state = {
     textColor: "#ffffff",
     accent: "#70d6ff",
     lyricKey: "",
+    lyricIndex: -1,
   },
-  domDynamicKey: "",
-  domDynamicAnimationTimestamp: 0,
-  domDynamicAnimationPlaying: undefined,
+  domLyricAnimation: undefined,
+  domRenderedLyricIndex: -1,
   domViewRevision: 0,
   domRenderedRevision: -1,
 
