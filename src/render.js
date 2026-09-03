@@ -529,7 +529,6 @@ export function renderDomWindow() {
     if (dynamicKey !== dynamic.dataset.key) {
       dynamic.dataset.key = dynamicKey;
       dynamic.textContent = "";
-      let isLatin = /[A-Za-z]/.test(words.map((word) => word.word).join(""));
       for (let i = 0; i < words.length; i++) {
         let word = words[i],
           wordContainer = doc.createElement("span"),
@@ -541,12 +540,6 @@ export function renderDomWindow() {
         played.className = "dom-word-played";
         wordContainer.append(base, played);
         dynamic.appendChild(wordContainer);
-        if (isLatin && i < words.length - 1) {
-          let space = doc.createElement("span");
-          space.className = "dom-word-space";
-          space.textContent = " ";
-          dynamic.appendChild(space);
-        }
       }
     }
     let wordElements = qAll(".dom-word-played", dynamic);
@@ -988,7 +981,6 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
             state.pLrc[i].originalLyric = o;
           }
           try {
-            d = d.replace(/\s+/g, " ").trim();
             state.pLrc[i].dynamicLyric = JSON.parse(d);
           } catch {}
         }

@@ -80,7 +80,7 @@ window.PiPWTestDomWindow = () => {
       .dom-lyric.is-next .dom-translation { color: var(--dom-translation-next, #8f929a); }
       .dom-dynamic { color: var(--dom-lyric-unplayed, #777b86); white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; transition: opacity 0.4s ease; }
       .dom-word { position: relative; display: inline-block; }
-      .dom-word > span { display: block; }
+      .dom-word > span { display: block; white-space: pre; }
       .dom-word-played { position: absolute !important; inset: 0 auto auto 0; width: 100%; overflow: hidden; color: var(--dom-lyric-played, #fff); clip-path: inset(0 100% 0 0); will-change: clip-path; }
       .dom-scroll { animation: dom-scroll-text var(--dom-scroll-duration, 6s) linear infinite alternate; }
       @keyframes dom-scroll-text { from { transform: translateX(0); } to { transform: translateX(var(--dom-scroll-distance)); } }
