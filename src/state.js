@@ -126,6 +126,7 @@ export const state = {
   },
   domLyricAnimation: undefined,
   domRenderedLyricIndex: -1,
+  domLyricWindowHeight: undefined,
   domViewRevision: 0,
   domRenderedRevision: -1,
 

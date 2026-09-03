@@ -1,7 +1,14 @@
 param(
     [string]$title = "PiPW DOM Window",
-    [switch]$watchDrag
+    [switch]$watchDrag,
+    [double]$aspectWidth = 2,
+    [double]$aspectHeight = 1,
+    [int]$initialWidth = 320,
+    [int]$initialHeight = 120
 )
+$aspectRatio = $aspectWidth / $aspectHeight
+$minWidth = 200
+$minHeight = [Math]::Ceiling($minWidth / $aspectRatio)
 $logFile = Join-Path $env:TEMP "PiPW-domWindowStyle.log"
 Set-Content -Path $logFile -Value "$(Get-Date -Format o) started title=[$title]" -Encoding UTF8
 Add-Type @"
@@ -56,8 +63,8 @@ $callback = {
     [DomWindowUtils]::SetWindowLong($hWnd, [DomWindowUtils]::GWL_STYLE, $style) | Out-Null
     $windowRect = New-Object DomWindowUtils+Rect
     [DomWindowUtils]::GetWindowRect($hWnd, [ref]$windowRect) | Out-Null
-    $windowWidth = 408
-    $windowHeight = 204
+    $windowWidth = $initialWidth
+    $windowHeight = $initialHeight
     $screenWidth = [DomWindowUtils]::GetSystemMetrics(0)
     $screenHeight = [DomWindowUtils]::GetSystemMetrics(1)
     $windowLeft = [Math]::Max(0, [int](($screenWidth - $windowWidth) / 2))
@@ -98,14 +105,33 @@ if ($watchDrag -and $matchedHwnd -ne [IntPtr]::Zero) {
                     if ($resizeMode) {
                         $x = $windowStart.Left
                         $y = $windowStart.Top
-                        $width = $windowStart.Right - $windowStart.Left
-                        $height = $windowStart.Bottom - $windowStart.Top
-                        if ($resizeLeft) { $x = $windowStart.Left + $deltaX; $width = $width - $deltaX }
-                        if ($resizeRight) { $width = $width + $deltaX }
-                        if ($resizeTop) { $y = $windowStart.Top + $deltaY; $height = $height - $deltaY }
-                        if ($resizeBottom) { $height = $height + $deltaY }
-                        if ($width -lt 200) { $width = 200; if ($resizeLeft) { $x = $windowStart.Right - $width } }
-                        if ($height -lt 100) { $height = 100; if ($resizeTop) { $y = $windowStart.Bottom - $height } }
+                        $startWidth = $windowStart.Right - $windowStart.Left
+                        $startHeight = $windowStart.Bottom - $windowStart.Top
+                        $width = $startWidth
+                        $height = $startHeight
+                        $horizontalScale = 1
+                        $verticalScale = 1
+                        if ($resizeLeft -or $resizeRight) {
+                            $candidateWidth = if ($resizeLeft) { $startWidth - $deltaX } else { $startWidth + $deltaX }
+                            $horizontalScale = $candidateWidth / $startWidth
+                        }
+                        if ($resizeTop -or $resizeBottom) {
+                            $candidateHeight = if ($resizeTop) { $startHeight - $deltaY } else { $startHeight + $deltaY }
+                            $verticalScale = $candidateHeight / $startHeight
+                        }
+                        if (($resizeLeft -or $resizeRight) -and ($resizeTop -or $resizeBottom)) {
+                            if ([Math]::Abs($horizontalScale - 1) -ge [Math]::Abs($verticalScale - 1)) { $verticalScale = $horizontalScale }
+                            else { $horizontalScale = $verticalScale }
+                        }
+                        $scale = if ($resizeLeft -or $resizeRight) { $horizontalScale } else { $verticalScale }
+                        $width = $startWidth * $scale
+                        $height = $width / $aspectRatio
+                        if ($resizeLeft) { $x = $windowStart.Right - $width }
+                        if ($resizeTop) { $y = $windowStart.Bottom - $height }
+                        if ($width -lt $minWidth) { $width = $minWidth; $height = $width / $aspectRatio }
+                        if ($height -lt $minHeight) { $height = $minHeight; $width = $height * $aspectRatio }
+                        if ($resizeLeft) { $x = $windowStart.Right - $width }
+                        if ($resizeTop) { $y = $windowStart.Bottom - $height }
                         [DomWindowUtils]::SetWindowPos($matchedHwnd, [IntPtr]::Zero, $x, $y, $width, $height, [DomWindowUtils]::SWP_NOZORDER -bor [DomWindowUtils]::SWP_NOACTIVATE) | Out-Null
                     } else {
                         $x = $windowStart.Left + $deltaX

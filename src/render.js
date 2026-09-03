@@ -10,7 +10,6 @@ import { colorPick } from "./color.js";
 export function getSharedLayout(width, height) {
   let aspect = state.readCfg.aspectRatio.split(":").map(Number),
     ratio = aspect[0] / aspect[1],
-    scale = width / (408 * ratio / 2),
     baseHeight = 204,
     cvSizeY = baseHeight / 3,
     o10 = baseHeight / 48,
@@ -20,11 +19,14 @@ export function getSharedLayout(width, height) {
     o105 = baseHeight / 4.57143,
     o150 = baseHeight / 3.2,
     lrcFS = o55,
-    lrcTop = cvSizeY + baseHeight / 10.6667;
+    lrcTop = cvSizeY + baseHeight / 10.6667,
+    lyricWindowHeight = state.domLyricWindowHeight || lrcFS * 1.2 + 2 + (lrcFS - baseHeight / 24) * 1.2,
+    contentHeight = lrcTop + lyricWindowHeight,
+    scale = width / (contentHeight * ratio);
   return {
     scale,
-    width: baseHeight * ratio,
-    height: baseHeight,
+    width: contentHeight * ratio,
+    height: contentHeight,
     cover: cvSizeY,
     infoLeft: cvSizeY + o10,
     titleSize: o55,
@@ -34,6 +36,7 @@ export function getSharedLayout(width, height) {
     subtitleTop: o105,
     artistTop: o150,
     lyricStart: lrcTop,
+    lyricWindowHeight,
     lyricSize: lrcFS,
     nextLyricSize: lrcFS - o10,
     lyricGap: o10,
@@ -454,7 +457,20 @@ export function renderDomWindow() {
     }
     let targetRow = rows[targetIndex - firstIndex],
       oldRow = rows[previousIndex - firstIndex];
-    track.parentElement.style.height = `${targetRow.offsetHeight}px`;
+    if (targetRow) {
+      let aspect = state.readCfg.aspectRatio.split(":").map(Number),
+        ratio = aspect[0] / aspect[1];
+      state.domLyricWindowHeight = targetRow.offsetHeight;
+      layout.lyricWindowHeight = state.domLyricWindowHeight;
+      layout.height = layout.lyricStart + layout.lyricWindowHeight;
+      layout.width = layout.height * ratio;
+      layout.scale = doc.documentElement.clientWidth / layout.width;
+      doc.documentElement.style.setProperty("--dom-scale", layout.scale);
+      doc.documentElement.style.setProperty("--dom-width", `${layout.width}px`);
+      doc.documentElement.style.setProperty("--dom-height", `${layout.height}px`);
+      doc.documentElement.style.setProperty("--dom-lyric-window-height", `${layout.lyricWindowHeight}px`);
+    }
+    track.parentElement.style.height = `${layout.lyricWindowHeight}px`;
     for (let row of rows) {
       prepareDomScroll(row.querySelector(".dom-main"));
       prepareDomScroll(row.querySelector(".dom-translation"));
@@ -549,11 +565,13 @@ export function renderDomWindow() {
 
   function fitDomWindowHeight(row, currentLayout) {
     if (!row || typeof domWindow.resizeTo !== "function") return;
-    let targetHeight = Math.ceil((currentLayout.lyricStart + row.offsetHeight) * currentLayout.scale),
-      currentHeight = doc.documentElement.clientHeight;
-    doc.documentElement.style.setProperty("--dom-content-height", `${Math.ceil(currentLayout.lyricStart + row.offsetHeight)}px`);
-    if (Math.abs(currentHeight - targetHeight) < 8) return;
-    domWindow.resizeTo(domWindow.outerWidth, domWindow.outerHeight - currentHeight + targetHeight);
+    let targetHeight = Math.ceil(currentLayout.height * currentLayout.scale),
+      targetWidth = Math.ceil(currentLayout.width * currentLayout.scale),
+      currentHeight = doc.documentElement.clientHeight,
+      currentWidth = doc.documentElement.clientWidth;
+    doc.documentElement.style.setProperty("--dom-content-height", `${Math.ceil(currentLayout.height)}px`);
+    if (Math.abs(currentHeight - targetHeight) < 8 && Math.abs(currentWidth - targetWidth) < 8) return;
+    domWindow.resizeTo(domWindow.outerWidth - currentWidth + targetWidth, domWindow.outerHeight - currentHeight + targetHeight);
   }
 }
 
