@@ -29,15 +29,19 @@ public static class DomWindowUtils {
     [DllImport("user32.dll")] public static extern bool InvalidateRect(IntPtr hWnd, IntPtr rect, bool erase);
     [DllImport("user32.dll")] public static extern bool UpdateWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int valueSize);
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; }
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; }
     public const int GWL_STYLE = -16;
     public const int WS_CAPTION = 0x00C00000;
+    public const int WS_BORDER = 0x00800000;
     public const int WS_THICKFRAME = 0x00040000;
     public const int WS_MINIMIZEBOX = 0x00020000;
     public const int WS_MAXIMIZEBOX = 0x00010000;
     public const int WS_SYSMENU = 0x00080000;
+    public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    public const int DWMWCP_ROUND = 2;
     public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOSIZE = 0x0001;
@@ -59,8 +63,10 @@ $callback = {
     if ($processId -notcontains $windowProcessId) { return $true }
     $script:matchedHwnd = $hWnd
     $style = [DomWindowUtils]::GetWindowLong($hWnd, [DomWindowUtils]::GWL_STYLE)
-    $style = $style -band (-bnot ([DomWindowUtils]::WS_CAPTION -bor [DomWindowUtils]::WS_THICKFRAME -bor [DomWindowUtils]::WS_MINIMIZEBOX -bor [DomWindowUtils]::WS_MAXIMIZEBOX -bor [DomWindowUtils]::WS_SYSMENU))
+    $style = $style -band (-bnot ([DomWindowUtils]::WS_CAPTION -bor [DomWindowUtils]::WS_BORDER -bor [DomWindowUtils]::WS_THICKFRAME -bor [DomWindowUtils]::WS_MINIMIZEBOX -bor [DomWindowUtils]::WS_MAXIMIZEBOX -bor [DomWindowUtils]::WS_SYSMENU))
     [DomWindowUtils]::SetWindowLong($hWnd, [DomWindowUtils]::GWL_STYLE, $style) | Out-Null
+    $cornerPreference = [DomWindowUtils]::DWMWCP_ROUND
+    [DomWindowUtils]::DwmSetWindowAttribute($hWnd, [DomWindowUtils]::DWMWA_WINDOW_CORNER_PREFERENCE, [ref]$cornerPreference, 4) | Out-Null
     $windowRect = New-Object DomWindowUtils+Rect
     [DomWindowUtils]::GetWindowRect($hWnd, [ref]$windowRect) | Out-Null
     $windowWidth = $initialWidth

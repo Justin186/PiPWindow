@@ -55,7 +55,8 @@ window.PiPWTestDomWindow = () => {
   <title>PiPW DOM Window</title>
     <style>
       html, body { box-sizing: border-box; margin: 0; width: 100%; height: 100%; overflow: hidden; border: 0; background: #202124; color: #fff; font: 400 12px "Segoe UI", "Microsoft Yahei UI", sans-serif; }
-      body { position: relative; cursor: move; user-select: none; }
+      html { background: transparent; border-radius: 12px; overflow: hidden; }
+      body { position: relative; background: #202124; border-radius: 12px; cursor: move; user-select: none; }
       .dom-background { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .55; filter: blur(18px); transform: scale(1.08); pointer-events: none; user-select: none; }
       .dragbar { position: absolute; z-index: 2; inset: 0 0 auto; height: 14px; cursor: move; touch-action: none; }
       .content { position: relative; z-index: 1; display: grid; grid-template-columns: var(--dom-cover) 1fr; gap: var(--dom-gap); box-sizing: border-box; width: var(--dom-width); height: var(--dom-content-height, var(--dom-height)); padding: var(--dom-padding); padding-top: var(--dom-padding-top); transform: scale(var(--dom-scale, 1)); transform-origin: top left; pointer-events: none; }
@@ -71,14 +72,16 @@ window.PiPWTestDomWindow = () => {
       :root { --dom-timing: cubic-bezier(0.45, 0, 0.07, 1); }
       .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); height: var(--dom-lyric-window-height, 2em); overflow: hidden; line-height: 1.2; }
       .lyric-track { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
-      .dom-lyric { box-sizing: border-box; padding-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: var(--dom-lyric-size); font-weight: 700; opacity: 1; }
+      .dom-lyric { box-sizing: border-box; padding-bottom: var(--dom-lyric-gap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dom-lyric-current, #fff); font-size: var(--dom-lyric-size); font-weight: 700; opacity: 1; }
+      .dom-lyric.is-next { color: var(--dom-lyric-next, #fff); }
       .dom-lyric.is-old { animation: dom-lyric-out 0.5s var(--dom-timing) forwards; }
       @keyframes dom-lyric-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0.45; transform: translateY(-6px); } }
-      .dom-translation { min-height: 1.2em; margin-top: 2px; color: #8f929a; font-size: var(--dom-translation-size); font-weight: 700; }
-      .dom-dynamic { color: #777b86; white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; transition: opacity 0.4s ease; }
+      .dom-translation { min-height: 1.2em; margin-top: 2px; color: var(--dom-translation-current, #8f929a); font-size: var(--dom-translation-size); font-weight: 700; }
+      .dom-lyric.is-next .dom-translation { color: var(--dom-translation-next, #8f929a); }
+      .dom-dynamic { color: var(--dom-lyric-unplayed, #777b86); white-space: nowrap; font-size: var(--dom-lyric-size); font-weight: 700; line-height: 1.2; transition: opacity 0.4s ease; }
       .dom-word { position: relative; display: inline-block; }
       .dom-word > span { display: block; }
-      .dom-word-played { position: absolute !important; inset: 0 auto auto 0; width: 100%; overflow: hidden; color: var(--dom-accent, #70d6ff); clip-path: inset(0 100% 0 0); will-change: clip-path; }
+      .dom-word-played { position: absolute !important; inset: 0 auto auto 0; width: 100%; overflow: hidden; color: var(--dom-lyric-played, #fff); clip-path: inset(0 100% 0 0); will-change: clip-path; }
       .dom-scroll { animation: dom-scroll-text var(--dom-scroll-duration, 6s) linear infinite alternate; }
       @keyframes dom-scroll-text { from { transform: translateX(0); } to { transform: translateX(var(--dom-scroll-distance)); } }
       .resize-handle { position: fixed; z-index: 10; }

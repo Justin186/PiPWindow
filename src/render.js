@@ -419,6 +419,12 @@ export function renderDomWindow() {
     doc.body.style.color = view.textColor || "#ffffff";
     doc.documentElement.style.setProperty("--dom-accent", view.accent || "#70d6ff");
   }
+  doc.documentElement.style.setProperty("--dom-lyric-current", state.color.text || "#ffffff");
+  doc.documentElement.style.setProperty("--dom-lyric-next", state.color.textT56 || "#ffffff");
+  doc.documentElement.style.setProperty("--dom-lyric-unplayed", state.color.textT42 || "#777b86");
+  doc.documentElement.style.setProperty("--dom-lyric-played", state.color.text || "#ffffff");
+  doc.documentElement.style.setProperty("--dom-translation-current", state.color.textT56 || "#8f929a");
+  doc.documentElement.style.setProperty("--dom-translation-next", state.color.textT31 || "#8f929a");
   if (lyricChanged && track) {
     let targetIndex = view.lyricIndex,
       previousIndex = state.domRenderedLyricIndex ?? -1,
@@ -433,7 +439,7 @@ export function renderDomWindow() {
         row = doc.createElement("div"),
         main = doc.createElement("div"),
         translation = doc.createElement("div");
-      row.className = `dom-lyric${index === previousIndex ? " is-old" : ""}`;
+      row.className = `dom-lyric${index === targetIndex ? "" : " is-next"}${index === previousIndex ? " is-old" : ""}`;
       main.className = "dom-main";
       translation.className = "dom-translation";
       let words = index === targetIndex && Array.isArray(view.dynamicWords) ? view.dynamicWords : item?.dynamicLyric;
