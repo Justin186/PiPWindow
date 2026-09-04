@@ -63,11 +63,16 @@ window.PiPWTestDomWindow = () => {
       .dom-cover { width: var(--dom-cover); height: var(--dom-cover); object-fit: cover; border-radius: 3px; background: #38393d; pointer-events: none; user-select: none; }
       .details { min-width: 0; overflow: hidden; }
       .dom-title, .dom-subtitle, .dom-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .dom-title { font-size: var(--dom-title-size); line-height: 1; font-weight: 400; color: var(--dom-text-primary, #fff); }
-      .dom-subtitle { margin-top: 3px; color: var(--dom-text-secondary, #b7bbc5); font-size: var(--dom-subtitle-size); line-height: 1; }
-      .dom-artist { margin-top: 3px; color: var(--dom-text-tertiary, #858995); font-size: var(--dom-artist-size); line-height: 1; }
-      .dom-time { margin-top: 5px; color: var(--dom-text-meta, #b7bbc5); font-size: var(--dom-time-size); font-variant-numeric: tabular-nums; }
-      .dom-progress { height: var(--dom-progress-size); margin-top: 3px; background: #555860; }
+      /* line-height 须 ≥ 字体内容区高度（Segoe UI 约 1.33em），否则 overflow:hidden 会裁掉 g/y 等降部 */
+      .dom-title { font-size: var(--dom-title-size); line-height: 1.35; font-weight: 400; color: var(--dom-text-primary, #fff); }
+      .dom-subtitle { margin-top: 0; color: var(--dom-text-secondary, #b7bbc5); font-size: var(--dom-subtitle-size); line-height: 1.35; }
+      .dom-artist { margin-top: 0; color: var(--dom-text-tertiary, #858995); font-size: var(--dom-artist-size); line-height: 1.35; }
+      /* 时间 + 进度条：整行绝对定位于封面正下方（与 canvas 版一致），时间在左、进度条占满剩余宽度。
+         top 不再加 gap：/16 字号的行高较大，需贴住封面底部才不压歌词区（行底 ≈85 < 歌词起点 ≈87.1） */
+      .timebar { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: calc(var(--dom-cover) + var(--dom-padding-top) + 2px); display: flex; align-items: center; gap: var(--dom-gap); }
+      /* min-width 让时间数字块宽度与上方封面等宽对齐，进度条起点随之固定在信息列起始位置；text-align 居中使其视觉上位于封面正下方中央 */
+      .dom-time { min-width: var(--dom-cover); text-align: center; color: var(--dom-text-meta, #b7bbc5); font-size: var(--dom-time-size); line-height: 1; font-variant-numeric: tabular-nums; }
+      .dom-progress { flex: 1; min-width: 0; height: var(--dom-progress-size); background: #555860; }
       .dom-progress-value { width: 100%; height: 100%; background: #70d6ff; transform: scaleX(0); transform-origin: left center; }
       :root { --dom-timing: cubic-bezier(0.45, 0, 0.07, 1); }
       .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); height: var(--dom-lyric-window-height, 2em); overflow: hidden; line-height: 1.2; }
@@ -97,7 +102,7 @@ window.PiPWTestDomWindow = () => {
       .resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
       .resize-sw { left: 0; bottom: 0; cursor: nesw-resize; }
     </style>
-    <img class="dom-background" alt="" draggable="false"><div class="dragbar"></div><main class="content"><img class="dom-cover" alt="" draggable="false"><section class="details"><div class="dom-title"></div><div class="dom-subtitle"></div><div class="dom-artist"></div><div class="dom-time"></div><div class="dom-progress"><div class="dom-progress-value"></div></div></section><section class="lyrics"><div class="lyric-track"></div></section></main>
+    <img class="dom-background" alt="" draggable="false"><div class="dragbar"></div><main class="content"><img class="dom-cover" alt="" draggable="false"><section class="details"><div class="dom-title"></div><div class="dom-subtitle"></div><div class="dom-artist"></div></section><section class="timebar"><div class="dom-time"></div><div class="dom-progress"><div class="dom-progress-value"></div></div></section><section class="lyrics"><div class="lyric-track"></div></section></main>
     <div class="resize-handle resize-n"></div><div class="resize-handle resize-s"></div><div class="resize-handle resize-e"></div><div class="resize-handle resize-w"></div>
     <div class="resize-handle resize-ne"></div><div class="resize-handle resize-nw"></div><div class="resize-handle resize-se"></div><div class="resize-handle resize-sw"></div>
   `);

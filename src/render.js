@@ -20,7 +20,8 @@ export function getSharedLayout(width, height) {
     o150 = baseHeight / 3.2,
     lrcFS = o55,
     translationSize = lrcFS - baseHeight / 30,
-    lrcTop = cvSizeY + baseHeight / 10.6667,
+    // /9（原 /10.6667）：给封面下方的时间条行留出上下呼吸空间（时间条行底 ≈87，歌词起点 ≈90.7）
+    lrcTop = cvSizeY + baseHeight / 9,
     lyricWindowHeight = state.domLyricWindowHeight || lrcFS * 1.2 + 2 + translationSize * 1.2 + o10,
     contentHeight = lrcTop + lyricWindowHeight,
     scale = width / (contentHeight * ratio);
@@ -45,8 +46,8 @@ export function getSharedLayout(width, height) {
     padding: o15,
     paddingTop: baseHeight / 48,
     gap: o10,
-    timeSize: baseHeight / 40,
-    progressSize: baseHeight / 240,
+    timeSize: baseHeight / 16, //时间文字：对齐 canvas 版字号（o30 = r/16），且宽度约等于封面宽度
+    progressSize: baseHeight / 96, //进度条粗细：对齐 canvas 版（o5 = r/96），原 /240 过细
   };
 }
 
@@ -1142,8 +1143,10 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
 
     state.domView.coverUrl = state.cvUrl || state.OcvUrl || "";
     state.domView.title = state.song.name;
-    state.domView.subtitle = state.song.nameAnother;
-    state.domView.artist = state.song.artist;
+    // 显示顺序互换：第二行（原专辑名位）显示歌手，第三行（原歌手位）显示专辑名。
+    // 仅交换文字，两个槽位的字号/行高等样式保持不变。
+    state.domView.subtitle = state.song.artist;
+    state.domView.artist = state.song.nameAnother;
     state.domView.time = state.t;
     state.domView.progress = state.tP;
     state.domView.duration = state.tT;
