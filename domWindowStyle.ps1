@@ -1,5 +1,5 @@
 param(
-    [string]$title = "PiPW DOM Window",
+    [string]$title = "PiPWindow",
     [switch]$watchDrag,
     [double]$aspectWidth = 2,
     [double]$aspectHeight = 1,

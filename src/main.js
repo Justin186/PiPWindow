@@ -41,8 +41,10 @@ window.PiPWTestDocumentPiP = async () => {
 };
 
 window.PiPWTestDomWindow = () => {
+  // 开关语义：窗口已存在时再次点击图标 → 关闭（原行为是仅聚焦，无法用图标关窗）。
+  // 关闭会触发窗口的 beforeunload，那里负责清空 state.domWindow 并停掉兜底定时器。
   if (state.domWindow && !state.domWindow.closed) {
-    state.domWindow.focus();
+    state.domWindow.close();
     return true;
   }
   let aspect = state.readCfg.aspectRatio.split(":").map(Number);
@@ -52,7 +54,7 @@ window.PiPWTestDomWindow = () => {
     return false;
   }
   domWindow.document.write(`
-  <title>PiPW DOM Window</title>
+  <title>PiPWindow</title>
     <style>
       html, body { box-sizing: border-box; margin: 0; width: 100%; height: 100%; overflow: hidden; border: 0; background: #202124; color: #fff; font: 400 12px "Segoe UI", "Microsoft Yahei UI", sans-serif; }
       html { background: transparent; border-radius: 12px; overflow: hidden; }
@@ -107,7 +109,7 @@ window.PiPWTestDomWindow = () => {
     <div class="resize-handle resize-ne"></div><div class="resize-handle resize-nw"></div><div class="resize-handle resize-se"></div><div class="resize-handle resize-sw"></div>
   `);
   domWindow.document.close();
-  domWindow.document.title = "PiPW DOM Window";
+  domWindow.document.title = "PiPWindow";
   state.domWindow = domWindow;
   let resizeDom = () => {
     let width = domWindow.document.documentElement.clientWidth,
@@ -174,7 +176,7 @@ window.PiPWTestDomWindow = () => {
   });
   setTimeout(() => {
     betterncm.app.exec(
-      `PowerShell -NoProfile -ExecutionPolicy Bypass -command "& '${loadedPlugins.PiPWindow.pluginPath}/domWindowStyle.ps1' -title 'PiPW DOM Window' -watchDrag -aspectWidth ${aspect[0]} -aspectHeight ${aspect[1]} -initialWidth ${Math.ceil(120 * aspect[0] / aspect[1])} -initialHeight 120"`
+      `PowerShell -NoProfile -ExecutionPolicy Bypass -command "& '${loadedPlugins.PiPWindow.pluginPath}/domWindowStyle.ps1' -title 'PiPWindow' -watchDrag -aspectWidth ${aspect[0]} -aspectHeight ${aspect[1]} -initialWidth ${Math.ceil(120 * aspect[0] / aspect[1])} -initialHeight 120"`
     );
     let correctDomWindowSize = () => {
       if (state.domWindow !== domWindow || domWindow.closed) return;
