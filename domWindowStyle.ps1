@@ -30,6 +30,8 @@ public static class DomWindowUtils {
     [DllImport("user32.dll")] public static extern bool UpdateWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int valueSize);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern int PrivateExtractIcons(string fileName, int iconIndex, int width, int height, IntPtr[] phicon, IntPtr[] piconid, uint nIcons, uint flags);
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; }
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; }
@@ -85,6 +87,26 @@ $callback = {
 [DomWindowUtils]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
 if (-not (Select-String -Path $logFile -Pattern "styled=true" -Quiet)) {
     Add-Content -Path $logFile -Value "$(Get-Date -Format o) matched=false"
+}
+# 设置窗口图标：从网易云主程序 exe 提取图标，WM_SETICON(ICON_BIG/ICON_SMALL) 设给小窗
+if ($matchedHwnd -ne [IntPtr]::Zero) {
+    try {
+        $ncmPath = (Get-Process -Name cloudmusic -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1).Path
+        if ($ncmPath) {
+            $bigIcon = New-Object 'IntPtr[]' 1
+            $smallIcon = New-Object 'IntPtr[]' 1
+            $iconIds = New-Object 'IntPtr[]' 1
+            $okBig = [DomWindowUtils]::PrivateExtractIcons($ncmPath, 0, 32, 32, $bigIcon, $iconIds, 1, 0)
+            $okSmall = [DomWindowUtils]::PrivateExtractIcons($ncmPath, 0, 16, 16, $smallIcon, $iconIds, 1, 0)
+            if ($okBig -gt 0) { [DomWindowUtils]::SendMessage($matchedHwnd, 0x0080, [IntPtr]1, $bigIcon[0]) | Out-Null }
+            if ($okSmall -gt 0) { [DomWindowUtils]::SendMessage($matchedHwnd, 0x0080, [IntPtr]0, $smallIcon[0]) | Out-Null }
+            Add-Content -Path $logFile -Value "$(Get-Date -Format o) icon=big:$okBig,small:$okSmall exe=[$ncmPath]"
+        } else {
+            Add-Content -Path $logFile -Value "$(Get-Date -Format o) icon=skipped exe-path-unavailable"
+        }
+    } catch {
+        Add-Content -Path $logFile -Value "$(Get-Date -Format o) icon-error=$($_.Exception.Message)"
+    }
 }
 if ($watchDrag -and $matchedHwnd -ne [IntPtr]::Zero) {
     Add-Content -Path $logFile -Value "$(Get-Date -Format o) drag-watcher=true hwnd=$matchedHwnd"
