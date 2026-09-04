@@ -3,7 +3,7 @@
 */
 
 import { state, pO } from "./state.js";
-import { q, qAll, cE, tipMsg } from "./utils.js";
+import { q, qAll, cE, tipMsg, dlog } from "./utils.js";
 import { colorPick } from "./color.js";
 import { getSharedLayout, loadPiP, renderDomWindow } from "./render.js";
 import { getSettingsPage } from "./settings.js";
@@ -22,6 +22,15 @@ window.PiPWShowRefreshing = (x = true) => {
     state.showRefreshing = false;
     return false;
   }
+};
+
+// 歌词行切换调试开关：复现"最小化后换行滞后"问题时在控制台执行 PiPWDebugLyric()，
+// 观察 PiPW_dbg 输出（渲染频率/进度源/换行事件/重建时机）。PiPWDebugLyric(false) 关闭。
+window.PiPWDebugLyric = (x = true) => {
+  state.debugLyric = !!x;
+  state.dbgLastStatAt = 0;
+  console.log("PiPW_dbg", "调试输出已", state.debugLyric ? "开启" : "关闭");
+  return state.debugLyric;
 };
 
 window.PiPWTestDocumentPiP = async () => {
@@ -134,7 +143,7 @@ window.PiPWTestDomWindow = () => {
     // 不会被调度，rAF 循环永久死亡。之后渲染只能靠 PlayProgress/PlayState 驱动
     // （暂停状态下完全没有），表现为小窗停在启动初期的中性底色不再更新。
     try {
-      renderDomWindow();
+      renderDomWindow("rAF");
     } catch (e) {
       console.error("PiPW DOM Window: renderDomWindow 异常（循环继续）\n", e);
     }
@@ -150,7 +159,7 @@ window.PiPWTestDomWindow = () => {
       return;
     }
     try {
-      renderDomWindow();
+      renderDomWindow("fallback");
     } catch {}
   }, 500);
   domWindow.addEventListener("beforeunload", () => {
@@ -209,20 +218,33 @@ function load() {
   legacyNativeCmder.appendRegisterCall("PlayProgress", "audioplayer", (_, p) => {
     state.playProgress = p * 1000;
     state.playProgressTimestamp = performance.now();
-    renderDomWindow();
+    renderDomWindow("PlayProgress");
     let pZ = Math.floor(p);
     if (pZ > state.tC || p < state.tC || state.readCfg.smoothProgessBar) {
       state.tC = p;
     }
+    // 断流检测：正常该回调约 1s 一次；最小化后若长时间不来，换行/逐字都会冻结
+    if (state.debugLyric) {
+      let now = performance.now(),
+        gap = state.dbgLastPlayProgressAt ? now - state.dbgLastPlayProgressAt : 0;
+      state.dbgLastPlayProgressAt = now;
+      if (gap > 1500) {
+        console.warn("PiPW_dbg PlayProgress 断流", `间隔${gap.toFixed(0)}ms`, `进度=${p.toFixed(2)}s`);
+      } else if (now - state.dbgPlayProgressHeartbeatAt > 2000) {
+        state.dbgPlayProgressHeartbeatAt = now;
+        dlog("PlayProgress 心跳", `间隔${gap.toFixed(0)}ms`, `进度=${p.toFixed(2)}s`);
+      }
+    }
   }); //requestAnimationFrame或setInterval会在网易云最小化后被优化，导致1FPS的感人帧率
   legacyNativeCmder.appendRegisterCall("PlayState", "audioplayer", (_, __, playingState) => {
+    dlog("PlayState 回调", `playingState=${playingState}`, `playProgress=${(state.playProgress / 1000).toFixed(2)}s`);
     let now = performance.now();
     if (playingState !== 1 && state.playProgressTimestamp) {
       state.playProgress += Math.max(0, now - state.playProgressTimestamp);
     }
     state.playProgressTimestamp = now;
     state.domView.isPlaying = playingState === 1;
-    renderDomWindow();
+    renderDomWindow("PlayState");
   });
 
   async function B() {

@@ -3,7 +3,7 @@
 */
 
 import { state, DcvUrl, discUrl, pO, pC } from "./state.js";
-import { cE, q, qAll, cn2jp, DEBUG, taskbarButton, tipMsg, reRatio, getDpr } from "./utils.js";
+import { cE, q, qAll, cn2jp, DEBUG, taskbarButton, tipMsg, reRatio, getDpr, dlog } from "./utils.js";
 import { colorPick } from "./color.js";
 
 /** 使用原 Canvas 的比例参数，为 DOM 窗口提供同一套布局数据。 */
@@ -333,6 +333,15 @@ function syncDomLyrics(currentProgress) {
   }
   let lyricKey = `${lineIndex}:${Array.isArray(main) ? main.map((word) => word.word).join("") : main}`;
   if (state.domView.lyricKey !== lyricKey) {
+    if (state.debugLyric) {
+      let prevLine = state.domView.lyricIndex >= 0 ? state.pLrc[state.domView.lyricIndex] : null;
+      dlog(
+        `换行判定 ${state.domView.lyricIndex}→${lineIndex}`,
+        `位置=${(position / 1000).toFixed(2)}s`,
+        `旧行起止=[${prevLine ? (prevLine.time / 1000).toFixed(2) : "?"}~${prevLine ? ((prevLine.time + (prevLine.duration || 0)) / 1000).toFixed(2) : "?"}]`,
+        `新行起止=[${(currentLine.time / 1000).toFixed(2)}~${((currentLine.time + (currentLine.duration || 0)) / 1000).toFixed(2)}]`
+      );
+    }
     state.domView.lyricKey = lyricKey;
     state.domView.lyricIndex = lineIndex;
     state.domView.lines = translations;
@@ -343,7 +352,7 @@ function syncDomLyrics(currentProgress) {
   }
 }
 
-export function renderDomWindow() {
+export function renderDomWindow(from = "unknown") {
   let domWindow = state.domWindow;
   if (!domWindow || domWindow.closed) {
     return;
@@ -362,6 +371,27 @@ export function renderDomWindow() {
   }
   if (!hasAudioTime && isPlaying && state.playProgressTimestamp) {
     currentProgress += Math.max(0, performance.now() - state.playProgressTimestamp);
+  }
+  // 每秒一次渲染统计：来源分布、进度源健康度（帧间增量/PlayProgress 陈旧度/主窗口是否隐藏）
+  if (state.debugLyric) {
+    let now = performance.now();
+    state.dbgRenderCount++;
+    state.dbgRenderSources[from] = (state.dbgRenderSources[from] || 0) + 1;
+    if (now - state.dbgLastStatAt >= 1000) {
+      let staleness = state.playProgressTimestamp ? now - state.playProgressTimestamp : -1;
+      dlog(
+        `渲染${state.dbgRenderCount}次/s[${Object.entries(state.dbgRenderSources).map(([k, v]) => `${k}:${v}`).join(",")}]`,
+        `进度=${(currentProgress / 1000).toFixed(2)}s(Δ${((currentProgress - state.dbgLastCurrentProgress) / 1000).toFixed(2)})`,
+        `音频=${audioPlayer ? `${audioPlayer.currentTime.toFixed(2)}s${audioPlayer.paused ? "⏸" : "▶"}` : "无LFP"}`,
+        `PP陈旧=${staleness < 0 ? "无" : `${staleness.toFixed(0)}ms`}`,
+        `主窗隐藏=${document.hidden}`,
+        `行=${state.domView.lyricIndex}`
+      );
+      state.dbgLastStatAt = now;
+      state.dbgRenderCount = 0;
+      state.dbgRenderSources = {};
+      state.dbgLastCurrentProgress = currentProgress;
+    }
   }
   syncDomLyrics(currentProgress);
   let lyricProgress = currentProgress + state.readCfg.lyricsOffset * 1000;
@@ -447,6 +477,7 @@ export function renderDomWindow() {
   doc.documentElement.style.setProperty("--dom-translation-current", state.color.textT56 || "#8f929a");
   doc.documentElement.style.setProperty("--dom-translation-next", state.color.textT31 || "#8f929a");
   if (lyricChanged && track) {
+    dlog(`重建DOM歌词行 index=${view.lyricIndex}`, `歌词进度=${(lyricProgress / 1000).toFixed(2)}s`, `来源=${from}`);
     let targetIndex = view.lyricIndex,
       previousIndex = state.domRenderedLyricIndex ?? -1;
     // 保留旧行 DOM 不动（scroll 状态天然保留），只重建目标行
@@ -545,11 +576,17 @@ export function renderDomWindow() {
     track.addEventListener("transitionend", finish);
     state.domLyricAnimation = finish;
     setTimeout(finish, duration + 80);
-    requestAnimationFrame(() => {
+    // 必须用 DOM 窗口自己的 rAF 启动过渡：主窗口最小化后其 rAF 被冻结，
+    // 该回调永不执行 → track 停在旧行位置（换行判定正确但界面不换行），
+    // 只能靠被节流的 setTimeout(finish) 在 ~1s 后跳变归位，动画全部丢失。
+    // DOM 小窗可见，其 rAF 不受主窗口最小化影响。
+    domWindow.requestAnimationFrame(() => {
       if (state.domLyricAnimation !== finish) return;
       track.style.transition = `transform ${duration}ms var(--dom-timing)`;
       track.style.transform = `translateY(${targetOffset}px)`;
     });
+  } else if (lyricChanged) {
+    dlog("异常：行已变化但找不到 .lyric-track，重建被跳过", `index=${view.lyricIndex}`);
   }
   for (let dynamic of qAll(".dom-dynamic", track)) {
     let row = dynamic.closest(".dom-lyric");
@@ -1151,6 +1188,13 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
     state.domView.progress = state.tP;
     state.domView.duration = state.tT;
     state.domView.isPlaying = !!pS?.state;
+    dlog(
+      `loadPiP 覆盖domView`,
+      `from=${from}`,
+      `playProgress=${(state.playProgress / 1000).toFixed(2)}s`,
+      `canvas行=${state.lrcLineCache.line}`,
+      `dom行=${state.domView.lyricIndex}`
+    );
     state.domView.lines = Array.from({ length: 5 }, (_, i) => ({ main: lyrics.M[i] || "", translation: lyrics.T[i] || "" }));
     state.domView.dynamicWords = Array.isArray(lyrics.M[0]) ? lyrics.M[0] : null;
     state.domView.dynamicTime = lyrics.currentT;

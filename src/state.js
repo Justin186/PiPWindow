@@ -159,6 +159,15 @@ export const state = {
   isVLsnAdded: false,
   isLrcRnpLsnAdded: false,
 
+  // ---- 歌词调试（window.PiPWDebugLyric() 开启后生效）----
+  debugLyric: false,
+  dbgLastStatAt: 0,
+  dbgRenderCount: 0,
+  dbgRenderSources: {},
+  dbgLastCurrentProgress: 0,
+  dbgLastPlayProgressAt: 0,
+  dbgPlayProgressHeartbeatAt: 0,
+
   // ---- 时间显示 ----
   t: "0:00 / 0:00",
   tC: 0,

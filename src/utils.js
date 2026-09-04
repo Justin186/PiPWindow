@@ -27,6 +27,13 @@ export function waht() {
   return arguments[0];
 }
 
+/** 歌词调试日志（控制台执行 window.PiPWDebugLyric() 开启） */
+export function dlog(...args) {
+  if (state.debugLyric) {
+    console.log("%cPiPW_dbg", "color:#70d6ff;font-weight:bold", ...args);
+  }
+}
+
 /** 调试模式：把 canvas 等元素挂到设置页便于检查 */
 export function DEBUG() {
   try {
