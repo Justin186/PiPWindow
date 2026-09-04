@@ -83,8 +83,8 @@ window.PiPWTestDomWindow = () => {
       .timebar { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: calc(var(--dom-cover) + var(--dom-padding-top) + 2px); display: flex; align-items: center; gap: var(--dom-gap); }
       /* min-width 让时间数字块宽度与上方封面等宽对齐，进度条起点随之固定在信息列起始位置；text-align 居中使其视觉上位于封面正下方中央 */
       .dom-time { min-width: var(--dom-cover); text-align: center; color: var(--dom-text-meta, #b7bbc5); font-size: var(--dom-time-size); line-height: 1; font-variant-numeric: tabular-nums; }
-      .dom-progress { flex: 1; min-width: 0; height: var(--dom-progress-size); background: #555860; }
-      .dom-progress-value { width: 100%; height: 100%; background: #70d6ff; transform: scaleX(0); transform-origin: left center; }
+      .dom-progress { flex: 1; min-width: 0; height: var(--dom-progress-size); background: var(--dom-progress-track, #555860); }
+      .dom-progress-value { width: 100%; height: 100%; background: var(--dom-accent, #70d6ff); transform: scaleX(0); transform-origin: left center; }
       :root { --dom-timing: cubic-bezier(0.45, 0, 0.07, 1); }
       .lyrics { position: absolute; left: var(--dom-padding); right: var(--dom-padding); top: var(--dom-lyric-start); height: var(--dom-lyric-window-height, 2em); overflow: hidden; line-height: 1.2; }
       .lyric-track { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }

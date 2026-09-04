@@ -464,6 +464,8 @@ export function renderDomWindow(from = "unknown") {
       doc.body.style.color = effectiveText;
     }
     doc.documentElement.style.setProperty("--dom-accent", state.color.accent || view.accent || "#70d6ff");
+    // 进度条轨道：与 canvas 版一致，用文字色 13% 透明度（color.js 中 textT13 已是合法 CSS 颜色）
+    doc.documentElement.style.setProperty("--dom-progress-track", state.color.textT13 || "#555860");
   }
   // 标题/副标题/歌手/时间的颜色跟随取色动态变化（与 canvas 版配色层级一致）
   doc.documentElement.style.setProperty("--dom-text-primary", state.color.text || "#ffffff");
