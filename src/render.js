@@ -302,21 +302,19 @@ function syncDomLyrics(currentProgress) {
     position = currentProgress + state.readCfg.lyricsOffset * 1000,
     left = 0,
     right = keys.length;
+  // 找到最后一个 time <= position 的行，不再要求 position < time + duration；
+  // 这样在当前行结束（time + duration）到下一行开始（nextLine.time）之间的
+  // 空白间隔里，仍然停留在当前行，直到下一句开始才切换。
   while (left < right) {
     let middle = Math.floor((left + right) / 2),
-      line = state.pLrc[middle],
-      duration = line.duration || 0;
-    if (position < line.time + duration && position >= line.time) {
-      left = middle;
-      break;
-    }
+      line = state.pLrc[middle];
     if (position < line.time) {
       right = middle;
     } else {
       left = middle + 1;
     }
   }
-  let lineIndex = Math.min(left, keys.length - 1),
+  let lineIndex = Math.max(0, Math.min(left - 1, keys.length - 1)),
     currentLine = state.pLrc[lineIndex],
     main = currentLine.dynamicLyric && state.readCfg.dynamicLyrics ? currentLine.dynamicLyric : currentLine.originalLyric,
     translations = [];
@@ -416,10 +414,25 @@ export function renderDomWindow() {
     title.textContent = view.title;
     subtitle.textContent = view.subtitle;
     artist.textContent = view.artist;
-    doc.body.style.background = view.background || "#202124";
-    doc.body.style.color = view.textColor || "#ffffff";
-    doc.documentElement.style.setProperty("--dom-accent", view.accent || "#70d6ff");
+    // 背景/前景色优先取 truth 源 state.color（onload 后即为最新），其次 domView，最后中性兜底。
+    // 这样 DOM 窗口即使在启动初期（domView 尚未被 loadPiPImpl 填好）也能尽快跟进新底色。
+    let effectiveBg =
+      state.color.bg ||
+      view.background ||
+      "#202124";
+    let effectiveText =
+      state.color.text ||
+      view.textColor ||
+      "#ffffff";
+    doc.body.style.background = effectiveBg;
+    doc.body.style.color = effectiveText;
+    doc.documentElement.style.setProperty("--dom-accent", state.color.accent || view.accent || "#70d6ff");
   }
+  // 标题/副标题/歌手/时间的颜色跟随取色动态变化（与 canvas 版配色层级一致）
+  doc.documentElement.style.setProperty("--dom-text-primary", state.color.text || "#ffffff");
+  doc.documentElement.style.setProperty("--dom-text-secondary", state.color.textT56 || "#b7bbc5");
+  doc.documentElement.style.setProperty("--dom-text-tertiary", state.color.textT56 || "#858995");
+  doc.documentElement.style.setProperty("--dom-text-meta", state.color.textT56 || "#b7bbc5");
   doc.documentElement.style.setProperty("--dom-lyric-current", state.color.text || "#ffffff");
   doc.documentElement.style.setProperty("--dom-lyric-next", state.color.textT56 || "#ffffff");
   doc.documentElement.style.setProperty("--dom-lyric-unplayed", state.color.textT42 || "#777b86");
@@ -1133,17 +1146,24 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
     state.domView.dynamicWords = Array.isArray(lyrics.M[0]) ? lyrics.M[0] : null;
     state.domView.dynamicTime = lyrics.currentT;
     state.domView.dynamicDuration = lyrics.currentD;
-    state.domView.background = state.color.bg;
-    state.domView.textColor = state.color.text;
-    state.domView.accent = state.color.accent;
     state.domViewRevision++;
 
     /*取色环节*/
-    chigai ? (state.readCfg.colorFrom == "albumCover" ? colorPick(state.cover ? state.cover : null) : colorPick()) : "";
-    if (state.color.text != state.colorCache.text || state.color.bg != state.colorCache.bg) {
+    // 注：此处的 colorPick 已移除——切歌瞬间 state.cover 尚为上一首封面，
+    // 过早取色只会把旧封面色写进 state.color。取色一律交由新封面 onload 后进行。
+    // 这里仅作颜色变化的探测（供下游决定是否重绘头部），并将当前色登记为基线。
+    if (
+      state.color.text &&
+      (state.color.text != state.colorCache.text || state.color.bg != state.colorCache.bg)
+    ) {
       nrHead = true;
       (state.colorCache.text = state.color.text), (state.colorCache.bg = state.color.bg);
     }
+    // 取色之后再回填 domView，确保背景/文字/accent 使用的是本轮最新颜色，
+    // 而不是上一帧遗留的旧色（此前这三行位于 colorPicker 之前，总落后一拍）。
+    state.domView.background = state.color.bg;
+    state.domView.textColor = state.color.text;
+    state.domView.accent = state.color.accent;
 
     /*创建canvas*/
     loadC();
@@ -1191,6 +1211,12 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
         state.cover.src = DcvUrl;
         state.readCfg.showDiscWhenNoCover ? "" : (cvSizeX = r / 96);
       } else {
+        // 同址保护：若目标 URL 与当前封面相同，浏览器不会再派发 onload，
+        // 导致 bgc（含其上方的半透明遮罩层）沿用旧封面不被重画。
+        // 这里先将 src 置空打断当前加载，再赋回以强制触发一次全新 onload。
+        if (state.cover.src === state.cvUrl) {
+          state.cover.src = "";
+        }
         state.cover.src = state.cvUrl;
       }
       state.cvUrlCache = state.cvUrl;
@@ -1556,6 +1582,16 @@ async function loadPiPImpl(isToPiP = true, from = "unknow") {
         }
         txtMgL = cvSizeX + o10;
         state.readCfg.colorFrom == "albumCover" ? colorPick(state.cover ? state.cover : null) : colorPick();
+        // 新封面取色完毕后，把最新颜色登记为基线，便于颜色变化在下游被识别。
+        (state.colorCache.text = state.color.text), (state.colorCache.bg = state.color.bg);
+        // DOM 窗口专用：取色后立即把新色灌进 domView 并提升修订号，
+        // 让 renderDomWindow 的下一次 tick 即刻消费新底色，不再依赖 loadPiPImpl 的频率。
+        // 不带 domWindow 判定：即使 DOM 窗口尚未创建，也先行更新共享的 domView，
+        // 这样窗口晚些弹出时能立刻读到最新底色（解决启动初期纯色底为中性的问题）。
+        state.domView.background = state.color.bg;
+        state.domView.textColor = state.color.text;
+        state.domView.accent = state.color.accent;
+        state.domViewRevision++;
         /*背景图*/
         if (state.readCfg.backgroundFrom == "albumCoverBlur") {
           state.bgcC.fillStyle = state.color.bg;

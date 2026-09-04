@@ -129,6 +129,9 @@ export const state = {
   domLyricWindowHeight: undefined,
   domViewRevision: 0,
   domRenderedRevision: -1,
+  // DOM 窗口上次实际应用的底色/前景色（幂等写入用，避免重复写 style）
+  domAppliedBg: undefined,
+  domAppliedText: undefined,
 
   // ---- 布尔标志 ----
   DontPlay: false,

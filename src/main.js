@@ -63,10 +63,10 @@ window.PiPWTestDomWindow = () => {
       .dom-cover { width: var(--dom-cover); height: var(--dom-cover); object-fit: cover; border-radius: 3px; background: #38393d; pointer-events: none; user-select: none; }
       .details { min-width: 0; overflow: hidden; }
       .dom-title, .dom-subtitle, .dom-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .dom-title { font-size: var(--dom-title-size); line-height: 1; font-weight: 400; }
-      .dom-subtitle { margin-top: 3px; color: #b7bbc5; font-size: var(--dom-subtitle-size); line-height: 1; }
-      .dom-artist { margin-top: 3px; color: #858995; font-size: var(--dom-artist-size); line-height: 1; }
-      .dom-time { margin-top: 5px; color: #b7bbc5; font-size: var(--dom-time-size); font-variant-numeric: tabular-nums; }
+      .dom-title { font-size: var(--dom-title-size); line-height: 1; font-weight: 400; color: var(--dom-text-primary, #fff); }
+      .dom-subtitle { margin-top: 3px; color: var(--dom-text-secondary, #b7bbc5); font-size: var(--dom-subtitle-size); line-height: 1; }
+      .dom-artist { margin-top: 3px; color: var(--dom-text-tertiary, #858995); font-size: var(--dom-artist-size); line-height: 1; }
+      .dom-time { margin-top: 5px; color: var(--dom-text-meta, #b7bbc5); font-size: var(--dom-time-size); font-variant-numeric: tabular-nums; }
       .dom-progress { height: var(--dom-progress-size); margin-top: 3px; background: #555860; }
       .dom-progress-value { width: 100%; height: 100%; background: #70d6ff; transform: scaleX(0); transform-origin: left center; }
       :root { --dom-timing: cubic-bezier(0.45, 0, 0.07, 1); }
@@ -123,11 +123,31 @@ window.PiPWTestDomWindow = () => {
     if (!state.domWindow || state.domWindow !== domWindow || domWindow.closed) {
       return;
     }
-    renderDomWindow();
+    // 异常保护：renderDomWindow 一旦抛错且未捕获，下面的 requestAnimationFrame
+    // 不会被调度，rAF 循环永久死亡。之后渲染只能靠 PlayProgress/PlayState 驱动
+    // （暂停状态下完全没有），表现为小窗停在启动初期的中性底色不再更新。
+    try {
+      renderDomWindow();
+    } catch (e) {
+      console.error("PiPW DOM Window: renderDomWindow 异常（循环继续）\n", e);
+    }
     domWindow.requestAnimationFrame(updateDom);
   };
   domWindow.requestAnimationFrame(updateDom);
+  // 兜底驱动：CEF 对离屏/新建弹窗可能节流 rAF，且暂停播放时 PlayProgress 不回调，
+  // 会导致取色结果（cover.onload 后）迟迟无人消费。主窗口侧的低频定时器保证
+  // renderDomWindow 至少每 500ms 被调用一次，颜色/文本状态最终一致。
+  let fallbackTimer = setInterval(() => {
+    if (!state.domWindow || state.domWindow !== domWindow || domWindow.closed) {
+      clearInterval(fallbackTimer);
+      return;
+    }
+    try {
+      renderDomWindow();
+    } catch {}
+  }, 500);
   domWindow.addEventListener("beforeunload", () => {
+    clearInterval(fallbackTimer);
     if (state.domWindow === domWindow) {
       state.domWindow = undefined;
     }

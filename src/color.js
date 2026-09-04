@@ -68,7 +68,13 @@ export function colorPick(from = null) {
         state.cpc.height = 3;
         state.cpcC = state.cpc.getContext("2d", { alpha: false });
       }
-      from.height ? state.cpcC.drawImage(from, 0, 0, state.cpc.width, state.cpc.height) : "";
+      // 封面尚未具备有效尺寸时不应取色：既不 drawImage 也不能向下读取旧像素，
+      // 否则会把上一首歌留在 cpc 里的颜色当成这次的取色结果。
+      if (!from.height) {
+        return;
+      }
+      state.cpcC.clearRect(0, 0, state.cpc.width, state.cpc.height);
+      state.cpcC.drawImage(from, 0, 0, state.cpc.width, state.cpc.height);
       let rgb = state.cpcC.getImageData(1, 1, 2, 2).data,
         l = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2],
         bf = 1,
