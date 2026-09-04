@@ -414,18 +414,24 @@ export function renderDomWindow() {
     title.textContent = view.title;
     subtitle.textContent = view.subtitle;
     artist.textContent = view.artist;
-    // 背景/前景色优先取 truth 源 state.color（onload 后即为最新），其次 domView，最后中性兜底。
-    // 这样 DOM 窗口即使在启动初期（domView 尚未被 loadPiPImpl 填好）也能尽快跟进新底色。
-    let effectiveBg =
-      state.color.bg ||
-      view.background ||
-      "#202124";
-    let effectiveText =
-      state.color.text ||
-      view.textColor ||
-      "#ffffff";
-    doc.body.style.background = effectiveBg;
-    doc.body.style.color = effectiveText;
+  }
+  // 背景/前景色应用放在 viewChanged 门之外：启动初期 cover.onload 后若没有任何
+  // 驱动调用 renderDomWindow（DOM 窗口 rAF 未跑 + 暂停播放无 PlayProgress），
+  // 被 bump 的修订号永远没机会被消费，表现为"纯色底一直是中性的，只有暂停/继续才正常"。
+  // 另外主窗口 MutationObserver 触发的 colorPick 不提升修订号，也依赖此处无条件应用。
+  // 幂等写入：用上次已应用的值做比较（不能直接读 style.background——
+  // 浏览器会把 hex 序列化成 rgb()，导致比较永不相等、每帧重复写入）。
+  {
+    let effectiveBg = state.color.bg || view.background || "#202124";
+    let effectiveText = state.color.text || view.textColor || "#ffffff";
+    if (state.domAppliedBg !== effectiveBg) {
+      state.domAppliedBg = effectiveBg;
+      doc.body.style.background = effectiveBg;
+    }
+    if (state.domAppliedText !== effectiveText) {
+      state.domAppliedText = effectiveText;
+      doc.body.style.color = effectiveText;
+    }
     doc.documentElement.style.setProperty("--dom-accent", state.color.accent || view.accent || "#70d6ff");
   }
   // 标题/副标题/歌手/时间的颜色跟随取色动态变化（与 canvas 版配色层级一致）
